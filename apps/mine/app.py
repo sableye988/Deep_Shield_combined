@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_migrate import Migrate
+from flask import send_file
 from PIL import Image, ImageOps
 import os
 from shutil import copyfile
@@ -422,3 +423,19 @@ def info():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+# 이미지 저장
+@app.get('/download/<int:image_id>')
+def download_protected(image_id):
+    if 'user_id' not in session:
+        flash("로그인이 필요합니다.")
+        return redirect(url_for('login'))
+    rec = ProtectedImage.query.get_or_404(image_id)
+    if rec.user_id != session['user_id']:
+        abort(403)
+    path = os.path.join(app.config['RESULT_FOLDER'], rec.protected_filename)
+    if not os.path.exists(path):
+        flash("파일을 찾을 수 없습니다.")
+        return redirect(url_for('mypage'))
+    return send_file(path, as_attachment=True, download_name=rec.protected_filename)
