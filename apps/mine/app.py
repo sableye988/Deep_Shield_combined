@@ -10,6 +10,7 @@ from PIL import Image, ImageOps
 import os
 from shutil import copyfile
 import logging
+import requests
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'
@@ -18,12 +19,18 @@ app.secret_key = 'your-secret-key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['RESULT_FOLDER'] = 'static/results'
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['RESULT_FOLDER'], exist_ok=True)
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 # 배포 시 세션 보안 권장 설정
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # HTTPS 사용 시:
 # app.config['SESSION_COOKIE_SECURE'] = True
+
+#은성님 워터마크 API
+MATE_API = "http://127.0.0.1:5002"
 
 # CSRF
 csrf = CSRFProtect(app)
