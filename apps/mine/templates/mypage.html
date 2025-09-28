@@ -70,7 +70,7 @@
           <tr>
             <th>일시</th>
             <th>이미지</th>
-            <th>변형여부</th>
+            <th>화질 유사도 (PSNR)</th>
             <th class="col-actions">저장</th>
             <th class="col-actions">삭제</th>
           </tr>
@@ -82,7 +82,19 @@
             <td class="cell-thumb">
               <img src="{{ mod.thumb_url }}" width="100" alt="변형 썸네일">
             </td>
-            <td class="cell-result">{{ mod.psnr }}</td>
+            <td class="cell-result">
+              {% if mod.psnr %}
+                {{ mod.psnr }} dB
+                <span class="tooltip">❓
+                  <span class="tooltip-text">
+                    원본과 결과 이미지의 화질 유사도를 나타내는 값입니다.<br>
+                    값이 높을수록 원본과 더 비슷해요.
+                  </span>
+                </span>
+              {% else %}
+                -
+              {% endif %}
+            </td>
             <td class="cell-actions">
               <a href="{{ mod.download_url }}" class="btn-download">저장하기</a>
             </td>
