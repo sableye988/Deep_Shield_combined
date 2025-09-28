@@ -5,12 +5,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_wtf.csrf import CSRFProtect, generate_csrf
-from flask_migrate import Migrate 
+from flask_migrate import Migrate
 from PIL import Image, ImageOps
 import os
 from shutil import copyfile
 import logging
 import requests
+import json
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'
@@ -26,10 +27,9 @@ app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 # 배포 시 세션 보안 권장 설정
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# HTTPS 사용 시:
-# app.config['SESSION_COOKIE_SECURE'] = True
+# app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS 시 활성화
 
-#은성님 워터마크 API
+# 팀원 워터마크 API
 MATE_API = "http://127.0.0.1:5002"
 
 # CSRF
@@ -73,22 +73,28 @@ def save_thumbnail(src_path: str, dst_path: str, max_size=(600, 600)):
         # 썸네일 실패해도 서비스 계속
         pass
 
+def read_psnr_from_png(png_path: str):
+    """PNG의 wm_meta에서 psnr_db 읽기 (없으면 None)"""
+    try:
+        im = Image.open(png_path)
+        info = getattr(im, "info", {}) or {}
+        meta_str = info.get("wm_meta")
+        if not meta_str:
+            return None
+        meta = json.loads(meta_str)
+        return meta.get("psnr_db")
+    except Exception:
+        return None
 
 # DB 초기화
 db.init_app(app)
-migrate = Migrate(app, db) 
-# ✅ Alembic 연동
-# ❌ create_all()는 사용하지 않습니다. (마이그레이션으로 관리)
-# with app.app_context():
-#     db.create_all()
-
+migrate = Migrate(app, db)
 
 # 에러 핸들러
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(e):
     flash("파일이 너무 큽니다. 최대 20MB까지 업로드할 수 있어요.")
     return redirect(request.referrer or url_for('index'))
-
 
 # ---------------------------
 # 라우트
@@ -142,7 +148,7 @@ def logout():
     flash("로그아웃 되었습니다.")
     return redirect(url_for('index'))
 
-# 탐지
+# 탐지 (현재는 예시 점수 — 이후 워터마크 기반 판별 로직으로 교체 가능)
 @app.route('/detect', methods=['GET', 'POST'])
 def detect():
     if request.method == 'POST':
@@ -178,7 +184,7 @@ def detect():
         detect_thumb_path = os.path.join(app.config['UPLOAD_FOLDER'], detect_thumb)
         save_thumbnail(filepath, detect_thumb_path)
 
-        # 예시 점수
+        # 예시 점수 (임시)
         import random
         detect_score = round(random.uniform(0, 100), 2)
 
@@ -190,7 +196,7 @@ def detect():
         db.session.add(new_result)
         db.session.commit()
 
-        # PRG: 결과를 세션에 담고 리다이렉트
+        # PRG
         session['detect_result'] = {
             'uploaded_url': url_for('static', filename='uploads/' + filename),
             'uploaded_thumb_url': url_for('static', filename='uploads/' + detect_thumb),
@@ -201,8 +207,7 @@ def detect():
     result = session.pop('detect_result', None)
     return render_template('detect.html', result=result)
 
-
-# 방지
+# 방지 (워터마크 삽입)
 @app.route('/prevent', methods=['GET', 'POST'])
 def prevent():
     if request.method == 'POST':
@@ -226,10 +231,9 @@ def prevent():
             flash("이미지 형식의 파일이 아닙니다.")
             return redirect(url_for('prevent'))
 
-        # 워터마크 강도(지금은 고정값, 필요 시 폼 입력 받아서 반영)
+        # 워터마크 강도(표시용)
         strength = 0.5
         user_id = session['user_id']
-
         ensure_upload_dir()
 
         # 원본 저장
@@ -237,10 +241,9 @@ def prevent():
         original_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
         file.save(original_path)
 
-        # ---- 워터마크 FastAPI로 전송하여 결과 PNG 받기 ----
+        # 팀원 FastAPI 호출
         try:
             with open(original_path, "rb") as fp:
-                # API의 필드명이 'host' 임에 주의
                 r = requests.post(
                     f"{MATE_API}/embed_fixed_single_color",
                     files={"host": fp},
@@ -250,16 +253,21 @@ def prevent():
                 flash(f"워터마크 임베드 실패: {r.status_code} {r.text[:200]}")
                 return redirect(url_for('prevent'))
         except Exception as e:
-            app.logger.exception("FastAPI 호출 실패")
+            app.logger.exception("FastAPI 호출 실패: %s", e)
             flash("내부 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
             return redirect(url_for('prevent'))
 
-        # API가 PNG를 바이너리로 내려주므로, 결과 확장자는 .png로 저장
+        # 결과 PNG 저장
         base_noext, _ = os.path.splitext(original_filename)
         protected_filename = f"{base_noext}_protected.png"
         protected_path = os.path.join(app.config['RESULT_FOLDER'], protected_filename)
         with open(protected_path, "wb") as out:
             out.write(r.content)
+
+        # (선택) PSNR 표시
+        psnr_db = read_psnr_from_png(protected_path)
+        if psnr_db is not None:
+            flash(f"워터마킹 PSNR: {psnr_db:.2f} dB")
 
         # 썸네일
         original_thumb = thumb_name(original_filename)
@@ -270,14 +278,14 @@ def prevent():
         # DB 기록
         new_record = ProtectedImage(
             user_id=user_id,
-            original_filename=original_filename,      # 업로드/원본은 uploads 폴더에
-            protected_filename=protected_filename,    # 결과는 results 폴더에 (경로 주의)
+            original_filename=original_filename,      # 업로드/원본은 uploads 폴더
+            protected_filename=protected_filename,    # 결과는 results 폴더
             watermark_strength=strength
         )
         db.session.add(new_record)
         db.session.commit()
 
-        # PRG: 결과를 세션에 담고 리다이렉트
+        # PRG
         session['prevent_result'] = {
             "original_url": url_for('static', filename='uploads/' + original_filename),
             "modified_url": url_for('static', filename='results/' + protected_filename),
@@ -288,7 +296,6 @@ def prevent():
 
     result = session.pop('prevent_result', None)
     return render_template('prevent.html', result=result)
-
 
 # 마이페이지 (페이징)
 @app.route('/mypage')
@@ -320,16 +327,20 @@ def mypage():
         for d in detect_pagination.items
     ]
 
-    modify_history = [
-        {
+    # 결과 PNG에서 PSNR 읽어 표시용으로 추가
+    mods = []
+    for img in modify_pagination.items:
+        protected_path = os.path.join(app.config['RESULT_FOLDER'], img.protected_filename)
+        psnr_db = read_psnr_from_png(protected_path)
+        mods.append({
             'id': img.id,
             'date': img.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'thumb_url': url_for('static', filename='results/' + thumb_name(img.protected_filename)),
-            'strength': int(img.watermark_strength * 100),
+            'psnr': (f"{psnr_db:.2f} dB" if psnr_db is not None else "N/A"),
+            'strength': int(img.watermark_strength * 100),  # 기존 템플릿 호환용 (원하면 삭제)
             'download_url': url_for('static', filename='results/' + img.protected_filename)
-        }
-        for img in modify_pagination.items
-    ]
+        })
+    modify_history = mods
 
     return render_template(
         'mypage.html',
@@ -380,13 +391,19 @@ def delete_modify(image_id):
         abort(403)
 
     try:
-        # 파일 삭제
-        for base in [rec.protected_filename, rec.original_filename]:
-            if base:
-                for fname in [base, thumb_name(base)]:
-                    fpath = os.path.join(app.config['UPLOAD_FOLDER'], fname)
-                    if os.path.exists(fpath):
-                        os.remove(fpath)
+        # 원본은 uploads에서 삭제
+        if rec.original_filename:
+            for fname in [rec.original_filename, thumb_name(rec.original_filename)]:
+                fpath = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+
+        # 결과는 results에서 삭제
+        if rec.protected_filename:
+            for fname in [rec.protected_filename, thumb_name(rec.protected_filename)]:
+                fpath = os.path.join(app.config['RESULT_FOLDER'], fname)
+                if os.path.exists(fpath):
+                    os.remove(fpath)
 
         # DB 삭제
         db.session.delete(rec)
