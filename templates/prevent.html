@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+    <h2>딥페이크 방지</h2>
+    <p>이미지에 워터마크를 삽입하여 위변조를 방지합니다.</p>
+</div>
+
+<section class="detect-section">
+    <div class="detect-container">
+        <form method="POST" action="{{ url_for('prevent') }}" enctype="multipart/form-data" class="detect-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="image">이미지 업로드</label>
+        <input type="file" id="image" name="image" accept="image/*" required>
+        <button type="submit">방지 시작</button>
+        </form>
+
+        <!-- 결과 영역 -->
+        <div class="detect-result-box">
+            {% if result %}
+                <h3>변형 결과</h3>
+                <div class="result-images">
+                    <div>
+                        <p>원본 이미지</p>
+                        <img src="{{ result.original_url }}" alt="원본 이미지">
+                    </div>
+                    <div>
+                        <p>변형 이미지</p>
+                        <img src="{{ result.modified_url }}" alt="변형 이미지">
+                    </div>
+                </div>
+                <p>※ 변형된 이미지는 마이페이지에서 저장할 수 있습니다.</p>
+            {% else %}
+                <p class="placeholder">여기에 변형 결과가 표시됩니다.</p>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}

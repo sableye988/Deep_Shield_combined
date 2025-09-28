@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+
+<section class="hero">
+  <h2>
+    딥페이크로부터 안전하게.<br>
+    <span>AI</span> 기반 보안 기능 제공.
+  </h2>
+  <div class="cta-buttons">
+    <a href="{{ url_for('detect') }}" class="cta-button">딥페이크 탐지</a>
+    <a href="{{ url_for('prevent') }}" class="cta-button">딥페이크 방지</a>
+  </div>
+</section>
+
+<section class="features">
+  <div>
+    <h3>비가시성 워터마킹</h3>
+    <p>원본 데이터에 보이지 않는 식별자를 삽입해 위변조를 방지합니다.</p>
+  </div>
+  <div>
+    <h3>손쉬운 사용</h3>
+    <p>누구나 쉽게 접근 가능하고 직관적인 인터페이스를 제공합니다.</p>
+  </div>
+  <div>
+    <h3>딥페이크 탐지</h3>
+    <p>처리된 워터마크를 통해 딥페이크를 탐지합니다.</p>
+  </div>
+</section>
+
+<section class="cta">
+  <h2>워터마크를 이용해</h2>
+  <p>딥페이크로부터 소중한 정보를 지키세요.</p>
+  <a href="{{ url_for('prevent') }}" class="cta-button">문의하기</a>
+</section>
+
+{% endblock %}
