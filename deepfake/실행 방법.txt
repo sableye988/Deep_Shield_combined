@@ -1,0 +1,15 @@
+# [컬러 유지] host 한 장 업로드 → face_marked.png(컬러) 저장
+curl.exe -X POST "http://127.0.0.1:8000/embed_fixed_single_color" `
+  -F "host=@C:\Users\정은성\Desktop\deepfake\face.jpg" `
+  -o face_marked.png
+
+# [컬러 유지] 추출
+curl.exe -X POST "http://127.0.0.1:8000/extract_fixed_color" `
+  -F "watermarked_png=@C:\Users\정은성\Desktop\deepfake\face_marked.png" `
+  -o wm_extracted.png
+
+
+face.jpg 원본사진
+hanshin.jpg 워터마크 사진
+face_marked.png 워터마크 적용된 사진
+wm_extracted.png 워터마크 적용된 사진에서 워터마크 추출
