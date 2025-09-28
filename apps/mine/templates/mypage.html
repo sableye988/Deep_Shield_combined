@@ -96,7 +96,7 @@
               {% endif %}
             </td>
             <td class="cell-actions">
-              <a href="{{ mod.download_url }}" class="btn-download">저장하기</a>
+              <a href="{{ url_for('download_protected', image_id=mod.id) }}" class="btn-download">저장하기</a>
             </td>
             <td class="cell-actions">
               <form method="POST" action="{{ url_for('delete_modify', image_id=mod.id) }}" onsubmit="return confirm('이 변형 기록을 삭제할까요?');">
