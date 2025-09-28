@@ -4,5 +4,6 @@ instance/
 migrations/
 site.db
 static/uploads/
+static/results/
 *.db
 *.sqlite3
