@@ -18,21 +18,26 @@
 
         <!-- 결과 영역 -->
         <div class="detect-result-box">
-            {% if result %}
-                <h3>결과</h3>
-                <div class="result-images">
-                    <img src="{{ result.uploaded_url }}" alt="업로드 이미지">
-                </div>
-                <p>
-                    딥페이크 탐지율: 
-                    <strong>{{ result.score }}%</strong>
-                    <span class="tooltip">❓
-                        <span class="tooltip-text">값이 높을수록 딥페이크일 가능성이 높습니다.</span>
-                    </span>
-                </p>
-            {% else %}
-                <p class="placeholder">여기에 탐지 결과가 표시됩니다.</p>
+          {% if result %}
+            <h3>결과</h3>
+            <div class="result-images">
+              <img src="{{ result.uploaded_url }}" alt="업로드 이미지">
+            </div>
+            <p>
+              딥페이크 탐지율:
+              <strong>{{ result.score }}%</strong>
+              <span class="tooltip">❓
+                <span class="tooltip-text">값이 높을수록 딥페이크일 가능성이 높습니다.</span>
+              </span>
+            </p>
+        
+            {% if result.verdict %}
+              <p><strong>{{ result.verdict }}</strong></p>
             {% endif %}
+        
+          {% else %}
+            <p class="placeholder">여기에 탐지 결과가 표시됩니다.</p>
+          {% endif %}
         </div>
     </div>
 </section>
