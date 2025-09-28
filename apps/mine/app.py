@@ -108,7 +108,7 @@ def signup():
             return redirect(url_for('signup'))
 
         hashed_pw = generate_password_hash(password)
-        new_user = User(username=username, password=hashed_pw)
+        new_user = User(username=username, password_hash=hashed_pw)
         db.session.add(new_user)
         db.session.commit()
         flash("회원가입이 완료되었습니다.")
@@ -124,7 +124,7 @@ def login():
         password = request.form['password']
 
         user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password, password):
+        if user and check_password_hash(user.password_hash, password):
             session['user_id'] = user.id
             session['username'] = user.username
             flash("로그인 성공!")
@@ -226,30 +226,52 @@ def prevent():
             flash("이미지 형식의 파일이 아닙니다.")
             return redirect(url_for('prevent'))
 
+        # 워터마크 강도(지금은 고정값, 필요 시 폼 입력 받아서 반영)
         strength = 0.5
         user_id = session['user_id']
 
         ensure_upload_dir()
 
+        # 원본 저장
         original_filename = build_safe_timestamp_name('original', file.filename)
-        protected_filename = build_safe_timestamp_name('protected', file.filename)
-
         original_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
-        protected_path = os.path.join(app.config['UPLOAD_FOLDER'], protected_filename)
-
         file.save(original_path)
-        copyfile(original_path, protected_path)
+
+        # ---- 워터마크 FastAPI로 전송하여 결과 PNG 받기 ----
+        try:
+            with open(original_path, "rb") as fp:
+                # API의 필드명이 'host' 임에 주의
+                r = requests.post(
+                    f"{MATE_API}/embed_fixed_single_color",
+                    files={"host": fp},
+                    timeout=120
+                )
+            if r.status_code != 200:
+                flash(f"워터마크 임베드 실패: {r.status_code} {r.text[:200]}")
+                return redirect(url_for('prevent'))
+        except Exception as e:
+            app.logger.exception("FastAPI 호출 실패")
+            flash("내부 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            return redirect(url_for('prevent'))
+
+        # API가 PNG를 바이너리로 내려주므로, 결과 확장자는 .png로 저장
+        base_noext, _ = os.path.splitext(original_filename)
+        protected_filename = f"{base_noext}_protected.png"
+        protected_path = os.path.join(app.config['RESULT_FOLDER'], protected_filename)
+        with open(protected_path, "wb") as out:
+            out.write(r.content)
 
         # 썸네일
         original_thumb = thumb_name(original_filename)
         protected_thumb = thumb_name(protected_filename)
         save_thumbnail(original_path, os.path.join(app.config['UPLOAD_FOLDER'], original_thumb))
-        save_thumbnail(protected_path, os.path.join(app.config['UPLOAD_FOLDER'], protected_thumb))
+        save_thumbnail(protected_path, os.path.join(app.config['RESULT_FOLDER'], protected_thumb))
 
+        # DB 기록
         new_record = ProtectedImage(
             user_id=user_id,
-            original_filename=original_filename,
-            protected_filename=protected_filename,
+            original_filename=original_filename,      # 업로드/원본은 uploads 폴더에
+            protected_filename=protected_filename,    # 결과는 results 폴더에 (경로 주의)
             watermark_strength=strength
         )
         db.session.add(new_record)
@@ -258,9 +280,9 @@ def prevent():
         # PRG: 결과를 세션에 담고 리다이렉트
         session['prevent_result'] = {
             "original_url": url_for('static', filename='uploads/' + original_filename),
-            "modified_url": url_for('static', filename='uploads/' + protected_filename),
+            "modified_url": url_for('static', filename='results/' + protected_filename),
             "original_thumb_url": url_for('static', filename='uploads/' + original_thumb),
-            "modified_thumb_url": url_for('static', filename='uploads/' + protected_thumb),
+            "modified_thumb_url": url_for('static', filename='results/' + protected_thumb),
         }
         return redirect(url_for('prevent'))
 
