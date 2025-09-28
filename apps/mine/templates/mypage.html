@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+  <h2>마이페이지</h2>
+  <p>탐지 및 이미지 변형 이력을 확인할 수 있습니다.</p>
+</div>
+
+<section class="detect-section">
+
+  <!-- 탐지 기록 -->
+  <h2>나의 탐지 기록</h2>
+  <div class="detect-result-box">
+    {% if detect_history %}
+      <table>
+        <thead>
+          <tr>
+            <th>일시</th>
+            <th>이미지</th>
+            <th>결과</th>
+            <th class="col-actions">삭제</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in detect_history %}
+          <tr>
+            <td class="cell-date">{{ entry.date }}</td>
+            <td class="cell-thumb">
+              <img src="{{ entry.thumb_url }}" width="100" alt="탐지 썸네일">
+            </td>
+            <td class="cell-result">{{ entry.result }}</td>
+            <td class="cell-actions">
+              <form method="POST" action="{{ url_for('delete_detect', detect_id=entry.id) }}" onsubmit="return confirm('이 탐지 기록을 삭제할까요?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-delete">삭제</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <!-- 탐지 페이징 -->
+      <div class="pagination">
+        {% if detect_pagination.has_prev %}
+          <a href="{{ url_for('mypage', dpage=detect_pagination.prev_num, mpage=modify_pagination.page) }}">&laquo; 이전</a>
+        {% else %}
+          <span class="disabled">&laquo; 이전</span>
+        {% endif %}
+
+        <span class="page-info">{{ detect_pagination.page }} / {{ detect_pagination.pages or 1 }}</span>
+
+        {% if detect_pagination.has_next %}
+          <a href="{{ url_for('mypage', dpage=detect_pagination.next_num, mpage=modify_pagination.page) }}">다음 &raquo;</a>
+        {% else %}
+          <span class="disabled">다음 &raquo;</span>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="placeholder">탐지 기록이 없습니다.</p>
+    {% endif %}
+  </div>
+
+  <!-- 변형 기록 -->
+  <h2>나의 이미지 변형 결과</h2>
+  <div class="detect-result-box">
+    {% if modify_history %}
+      <table>
+        <thead>
+          <tr>
+            <th>일시</th>
+            <th>이미지</th>
+            <th>변형여부</th>
+            <th class="col-actions">저장</th>
+            <th class="col-actions">삭제</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for mod in modify_history %}
+          <tr>
+            <td class="cell-date">{{ mod.date }}</td>
+            <td class="cell-thumb">
+              <img src="{{ mod.thumb_url }}" width="100" alt="변형 썸네일">
+            </td>
+            <td class="cell-result">{{ mod.strength }}%</td>
+            <td class="cell-actions">
+              <a href="{{ mod.download_url }}" class="btn-download">저장하기</a>
+            </td>
+            <td class="cell-actions">
+              <form method="POST" action="{{ url_for('delete_modify', image_id=mod.id) }}" onsubmit="return confirm('이 변형 기록을 삭제할까요?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-delete">삭제</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <!-- 변형 페이징 -->
+      <div class="pagination">
+        {% if modify_pagination.has_prev %}
+          <a href="{{ url_for('mypage', dpage=detect_pagination.page, mpage=modify_pagination.prev_num) }}">&laquo; 이전</a>
+        {% else %}
+          <span class="disabled">&laquo; 이전</span>
+        {% endif %}
+
+        <span class="page-info">{{ modify_pagination.page }} / {{ modify_pagination.pages or 1 }}</span>
+
+        {% if modify_pagination.has_next %}
+          <a href="{{ url_for('mypage', dpage=detect_pagination.page, mpage=modify_pagination.next_num) }}">다음 &raquo;</a>
+        {% else %}
+          <span class="disabled">다음 &raquo;</span>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="placeholder">이미지 변형 기록이 없습니다.</p>
+    {% endif %}
+  </div>
+
+</section>
+
+{% endblock %}

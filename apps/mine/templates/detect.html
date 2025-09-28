@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+    <h2>딥페이크 탐지</h2>
+    <p>이미지를 업로드하여 딥페이크 여부를 확인합니다.</p>
+</div>
+
+<section class="detect-section">
+    <div class="detect-container">
+        <!-- 업로드 폼 -->
+            <form method="POST" action="{{ url_for('detect') }}" enctype="multipart/form-data" class="detect-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="image">이미지 업로드</label>
+            <input type="file" id="image" name="image" accept="image/*" required>
+            <button type="submit">탐지 시작</button>
+        </form>
+
+        <!-- 결과 영역 -->
+        <div class="detect-result-box">
+            {% if result %}
+                <h3>결과</h3>
+                <div class="result-images">
+                    <img src="{{ result.uploaded_url }}" alt="업로드 이미지">
+                </div>
+                <p>
+                    딥페이크 탐지율: 
+                    <strong>{{ result.score }}%</strong>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">값이 높을수록 딥페이크일 가능성이 높습니다.</span>
+                    </span>
+                </p>
+            {% else %}
+                <p class="placeholder">여기에 탐지 결과가 표시됩니다.</p>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}

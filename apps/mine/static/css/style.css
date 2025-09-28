@@ -1,0 +1,331 @@
+/* 1. 기본 구조 및 타이포그래피 */
+body {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: #333;
+    background-color: #fff;
+    margin: 0;
+    padding: 0;
+}
+
+h1, h2, h3 {
+    font-weight: 700;
+    margin-bottom: 0.5em;
+}
+
+h2 { font-size: 1.8rem; }
+h3 { font-size: 1.4rem; }
+
+/* 2. 레이아웃 및 공통 섹션 */
+section {
+    padding: 60px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+section p {
+    max-width: 600px;
+    margin: 0 auto 1em;
+    text-align: center;
+}
+
+/* 3. 버튼 스타일 */
+.cta-button,
+button {
+    display: inline-block;
+    background-color: #007BFF;
+    color: #fff;
+    padding: 12px 24px;
+    text-decoration: none;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+.cta-button:hover,
+button:hover { background-color: #0056b3; }
+
+/* 4. 헤더: 로고 중앙, 메뉴 우측 */
+.navbar {
+    position: relative;
+    height: 80px;
+    border-bottom: 1px solid #ddd;
+    background-color: #fff;
+}
+.logo {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-weight: 800;
+    font-size: 1.8rem;
+    color: #007BFF;
+}
+nav {
+    position: absolute;
+    right: 40px; top: 50%;
+    transform: translateY(-50%);
+    display: flex; gap: 20px;
+}
+nav a {
+    text-decoration: none;
+    color: #333;
+    font-weight: 500;
+    transition: color 0.2s ease;
+}
+nav a:hover { color: #007BFF; }
+
+/* 5. 홈 hero 및 기능 섹션 */
+.hero {
+    background: linear-gradient(135deg, #007BFF, #00BFFF, #1E90FF);
+    color: #fff;
+    padding: 60px 20px;
+    text-align: center;
+}
+.hero h2 span { color: #ffd700; }
+.features {
+    display: flex;
+    justify-content: space-around;
+    padding: 40px 10px;
+    text-align: center;
+    background: #f2f8ff;
+}
+.features div { max-width: 200px; }
+.cta { background-color: #e6f0ff; padding: 40px; text-align: center; }
+
+/* 6. 폼 영역 (공통) */
+form {
+    max-width: 500px;
+    margin: 0 auto;
+    text-align: left;
+}
+form label {
+    display: block;
+    margin: 20px 0 8px;
+    font-weight: bold;
+}
+form input[type="file"],
+form input[type="text"],
+form input[type="password"],
+form input[type="range"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+/* 7. 테이블 */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    background-color: #fff;
+}
+table thead { background-color: #e0f0ff; }
+table th, table td {
+    padding: 12px 16px;
+    text-align: center;
+    border-bottom: 1px solid #ddd;
+}
+table img { border-radius: 8px; }
+
+/* 8. 딥페이크 탐지/방지 공통 레이아웃 */
+.detect-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 40px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+}
+.detect-form { flex: 1; min-width: 280px; }
+.detect-form label { display: block; margin-bottom: 8px; font-weight: bold; }
+.detect-form input[type="file"] { display: block; margin-bottom: 20px; }
+.detect-form button {
+    background-color: #007BFF; color: #fff;
+    padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer;
+}
+.detect-form button:hover { background-color: #0056b3; }
+
+/* 결과 박스 중앙 정렬 (탐지/방지 공통) */
+.detect-result-box {
+    flex: 1;
+    min-width: 300px;
+    border: 2px dashed #007BFF;
+    border-radius: 10px;
+    padding: 20px;
+    background-color: #f9fbff;
+    color: #333;
+
+    /* 중앙 정렬 핵심 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;      /* 가로 중앙 */
+    justify-content: center;  /* 세로 중앙 */
+    text-align: center;
+    min-height: 320px;        /* 박스 높이 확보(원하면 조절) */
+}
+.detect-result-box h3 { margin-top: 0; }
+
+/* 결과 큰 미리보기 이미지 */
+.result-images {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.result-images img {
+    max-width: 100%;
+    max-height: 300px;
+    width: auto;
+    height: auto;
+    display: block;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+/* 마이페이지 테이블 셀 중앙 정렬 */
+.detect-result-box table td { vertical-align: middle; }
+
+/* ✅ 썸네일 균일화: 테이블 안의 이미지에만 적용 (충돌 해결) */
+.detect-result-box table img {
+  max-width: 100px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.placeholder { color: #999; font-style: italic; }
+
+/* 9. 반응형 (모바일 미사용이면 수정 불필요하지만 기존 유지) */
+@media (max-width: 768px) {
+    .features { flex-direction: column; gap: 2rem; align-items: center; }
+    .navbar { flex-direction: column; height: auto; }
+    .logo { position: static; transform: none; margin-top: 10px; }
+    nav { position: static; transform: none; flex-direction: column; align-items: center; margin: 10px 0; }
+    nav a { margin: 5px 0; }
+    form { width: 90%; }
+    .detect-container { flex-direction: column; align-items: center; }
+    .detect-result-box { width: 90%; margin-top: 30px; }
+}
+
+/* 전체 레이아웃: 푸터를 항상 아래로 */
+html, body { height: 100%; }
+.wrapper {
+    display: flex; flex-direction: column; min-height: 100vh;
+}
+main { flex: 1; }
+
+/* 푸터 */
+.footer {
+    text-align: center; padding: 20px;
+    background-color: #f4f4f4; color: #666; font-size: 0.9rem;
+}
+
+/* 링크 스타일 (결과 박스 내) */
+.detect-result-box a { color: #007BFF; text-decoration: underline; }
+.detect-result-box a:hover { color: #0056b3; }
+
+/* 정보 카드/리스트 */
+.info-card {
+    background-color: #f9fbff;
+    border: 1px solid #dde8f4;
+    border-radius: 12px;
+    padding: 30px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 6px rgba(0, 123, 255, 0.05);
+    max-width: 800px;
+    margin-left: auto; margin-right: auto;
+    text-align: left; line-height: 1.7;
+}
+.info-list { padding-left: 20px; line-height: 1.7; margin-top: 10px; }
+.info-list li { margin-bottom: 8px; }
+.info-card p { word-break: keep-all; white-space: normal; }
+
+/* 홈 CTA 버튼 그룹 */
+.cta-buttons {
+    display: flex; justify-content: center; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap;
+}
+
+/* 컴팩트 페이지 헤더 (좌측 정렬, 얇은 구분선) */
+.page-header {
+    padding: 20px 0 10px 0;
+    border-bottom: 1px solid #ddd;
+    margin-bottom: 30px;
+    text-align: left;
+    max-width: 1200px;
+    margin-left: auto; margin-right: auto;
+}
+.page-header h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin: 0 20px;
+    color: #333;
+}
+.page-header p { display: none; }
+
+/* 툴팁 컨테이너 */
+.tooltip {
+    position: relative;
+    display: inline-block;
+    cursor: help;
+    font-size: 14px;
+    margin-left: 5px;
+}
+
+/* 툴팁 텍스트 */
+.tooltip .tooltip-text {
+    visibility: hidden;
+    width: 220px;
+    background-color: #333;
+    color: #fff;
+    text-align: left;
+    border-radius: 6px;
+    padding: 8px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%; /* 아이콘 위에 뜨도록 */
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+/* 툴팁 화살표 */
+.tooltip .tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+}
+
+/* 마우스 올렸을 때 표시 */
+.tooltip:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* 버튼 위치 조정 */
+.col-actions,
+.cell-actions { text-align: center; }
+
+.cell-actions form {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-delete,
+.btn-download {
+  padding: 8px 14px;
+  border-radius: 6px;
+}

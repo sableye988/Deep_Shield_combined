@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title or "Deepfake Detector" }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="wrapper">
+        <header class="navbar">
+            <div class="logo">Deep Shield</div>
+            <nav>
+                <a href="{{ url_for('index') }}">홈</a>
+                <a href="{{ url_for('detect') }}">탐지</a>
+                <a href="{{ url_for('prevent') }}">방지</a>
+                <a href="{{ url_for('info') }}">정보</a>
+
+                {% if session.get('user_id') and session.get('username') %}
+                    {% set display_name = session['username'][:3] ~ '***' %}
+                    <span class="welcome-text">환영합니다, {{ display_name }}님</span>
+                    <a href="{{ url_for('mypage') }}">마이페이지</a>
+                    <a href="{{ url_for('logout') }}">로그아웃</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}">로그인</a>
+                    <a href="{{ url_for('signup') }}">회원가입</a>
+                {% endif %}
+            </nav>
+        </header>
+
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="footer">
+            <p>© 2025 AI 탐지 프로젝트팀 DeepShield</p>
+        </footer>
+    </div>
+</body>
+</html>
