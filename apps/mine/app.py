@@ -324,9 +324,9 @@ def mypage():
         {
             'id': img.id,
             'date': img.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-            'thumb_url': url_for('static', filename='uploads/' + thumb_name(img.protected_filename)),
+            'thumb_url': url_for('static', filename='results/' + thumb_name(img.protected_filename)),
             'strength': int(img.watermark_strength * 100),
-            'download_url': url_for('static', filename='uploads/' + img.protected_filename)
+            'download_url': url_for('static', filename='results/' + img.protected_filename)
         }
         for img in modify_pagination.items
     ]
