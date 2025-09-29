@@ -1,9 +1,26 @@
+# 가상환경
 venv/
+**/venv/
+
+# 파이썬 캐시/DB
 __pycache__/
-instance/
-migrations/
+*.pyc
 site.db
-static/uploads/
-static/results/
 *.db
 *.sqlite3
+
+# 인스턴스(비밀 키/환경 설정 등)
+instance/
+
+# 정적 업로드 산출물(런타임 생성)
+static/uploads/
+static/results/
+
+# 개발환경/OS 잡파일
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 환경변수 파일
+.env
