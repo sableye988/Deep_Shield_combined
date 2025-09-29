@@ -13,6 +13,7 @@
                 <a href="{{ url_for('index') }}">홈</a>
                 <a href="{{ url_for('detect') }}">탐지</a>
                 <a href="{{ url_for('prevent') }}">방지</a>
+                <a href="{{ url_for('verify') }}">재테스트</a>
                 <a href="{{ url_for('info') }}">정보</a>
 
                 {% if session.get('user_id') and session.get('username') %}
