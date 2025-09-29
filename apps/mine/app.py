@@ -430,7 +430,7 @@ def info():
 
 
 # 이미지 저장
-@app.get('/download/<int:image_id>')
+@app.route('/download/<int:image_id>', methods=['GET'])
 def download_protected(image_id):
     if 'user_id' not in session:
         flash("로그인이 필요합니다.")
