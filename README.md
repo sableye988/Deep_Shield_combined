@@ -49,7 +49,7 @@ pip install -r requirements.txt
 
 ## 3. 서버 실행
 
-프로젝트는 **두 개의 서버**가 필요합니다.
+**두 개의 서버**가 필요합니다.
 
 * **터미널 1 (FastAPI: 워터마크 API 서버)**
 
