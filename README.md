@@ -1,39 +1,107 @@
-## 개요
-Deep_Shield 프로젝트의 **Mine App** 모듈입니다.  
-Flask 기반으로 회원 관리, 딥페이크 탐지/방지, 워터마크 기반 재검사 기능을 제공합니다.
+````markdown
+# Deep Shield 실행 가이드
+
+## 1. Python 환경 준비
+- Python **3.12 이상 권장**
+
+### 1-1. 가상환경 생성
+```bash
+python -m venv venv
+````
+
+### 1-2. 가상환경 활성화
+
+* **Windows (PowerShell):**
+
+  ```bash
+  venv\Scripts\activate
+  ```
+* **Windows (Git Bash):**
+
+  ```bash
+  source venv/Scripts/activate
+  ```
+* **macOS / Linux:**
+
+  ```bash
+  source venv/bin/activate
+  ```
+
+### 1-3. 의존성 설치
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
 ---
 
-## 실행 방법
+## 2. 서버 실행
 
-```bash
-git clone https://github.com/sableye988/Deep_Shield_combined.git
-cd Deep_Shield_combined/apps/mine
-git pull origin main
+### A. FastAPI 서버 (워터마크 API)
 
+* 위치: `apps/mate`
+* 실행:
 
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# Mac/Linux
-source venv/bin/activate
+  ```bash
+  cd apps/mate
+  uvicorn main:app --reload --port 5002
+  ```
 
+### B. Flask 서버 (웹사이트)
 
-pip install -r requirements.txt
+* 위치: `apps/mine`
+* 실행 (가상환경 활성화된 상태):
 
+  ```bash
+  cd apps/mine
+  flask run
+  ```
 
-flask db upgrade
+  또는
 
+  ```bash
+  python app.py
+  ```
 
-flask run
+---
 
+## 3. 데이터베이스 (최초 실행 시)
 
-apps/mine/
- ├── app.py                # Flask 메인 실행 파일
- ├── models.py             # DB 모델 정의
- ├── migrations/           # Alembic DB 마이그레이션 파일
- ├── templates/            # HTML 템플릿
- ├── static/               # 정적 파일 (CSS, JS, 업로드 이미지 등)
- │    ├── uploads/         # 사용자가 업로드한 원본 이미지
- │    └── results/         # 워터마크 삽입 결과 이미지
- └── assets/               # 워터마크 참조 이미지
+* DB: **SQLite (`site.db`)**
+* 마이그레이션 실행:
+
+  ```bash
+  flask db upgrade
+  ```
+
+---
+
+## 4. 실행 순서
+
+* **터미널 1 (워터마크 API 서버 실행):**
+
+  ```bash
+  cd apps/mate
+  uvicorn main:app --reload --port 5002
+  ```
+
+* **터미널 2 (웹사이트 실행):**
+
+  ```bash
+  cd apps/mine
+  venv\Scripts\activate   # 또는 source venv/bin/activate
+  flask run
+  ```
+
+---
+
+## 5. 유의사항
+
+* 두 서버(FastAPI + Flask)를 **모두 실행해야 전체 기능이 정상 동작**합니다.
+
+  * Flask(`mine`)만 실행 시: 로그인, 탐지 페이지까지만 동작
+  * FastAPI(`mate`) 실행 시: 방지 및 재검사 페이지 정상 동작
+* `assets/hanshin.png`는 워터마크 검증용 참조 이미지이므로 반드시 필요합니다.
+
+```
