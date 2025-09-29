@@ -329,3 +329,59 @@ main { flex: 1; }
   padding: 8px 14px;
   border-radius: 6px;
 }
+
+
+/* --- verify 전용 / 공용 유틸 추가 --- */
+
+/* 업로드 도움말 텍스트 */
+.help {
+  font-size: 0.9rem;
+  color: #666;
+  margin: -10px 0 16px;
+}
+
+/* 결과 요약 텍스트 */
+.verdict {
+  font-size: 1.05rem;
+  margin-top: .6rem;
+}
+
+/* 진행 바 */
+.progress {
+  height: 10px;
+  background: #eef4ff;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: .5rem 0 1rem;
+  box-shadow: inset 0 0 0 1px rgba(0,123,255,.08);
+}
+.progress .bar {
+  height: 100%;
+  background: linear-gradient(90deg, #2ea0ff, #007BFF);
+  transition: width .3s ease;
+}
+
+/* details 스타일 (기준 설명용) */
+.hint {
+  margin-top: .5rem;
+  text-align: left;
+  width: 100%;
+  max-width: 560px;
+}
+.hint > summary {
+  cursor: pointer;
+  list-style: none;
+  color: #007BFF;
+  font-weight: 600;
+  margin-bottom: .35rem;
+}
+.hint[open] > summary { color: #0056b3; }
+.hint ul {
+  margin: .25rem 0 0 .2rem;
+  padding-left: 1.1rem;
+}
+.hint li { margin: .2rem 0; }
+
+/* 재검사 결과 이미지도 기존 박스 규칙 따르도록 */
+.result-metrics { max-width: 560px; }
+
