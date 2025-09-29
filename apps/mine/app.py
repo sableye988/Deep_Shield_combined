@@ -345,7 +345,7 @@ def mypage():
             'date': img.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'thumb_url': url_for('static', filename='results/' + thumb_name(img.protected_filename)),
             'psnr': (f"{psnr_db:.2f}" if psnr_db is not None else None),
-            'download_url': url_for('download_protected', image_id=img.id)  # ✅ 여기 수정
+            'download_url': url_for('download_protected', image_id=img.id)
         })
     modify_history = mods
 
