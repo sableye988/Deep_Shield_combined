@@ -13,6 +13,9 @@ from shutil import copyfile
 import logging
 import requests
 import json
+import io
+import numpy as np
+
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'
@@ -30,8 +33,12 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS 시 활성화
 
-# 팀원 워터마크 API
+# 은성님 워터마크 API
 MATE_API = "http://127.0.0.1:5002"
+
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
+os.makedirs(ASSETS_DIR, exist_ok=True)
+WATERMARK_REF_PATH = os.path.join(ASSETS_DIR, "hanshin.png")
 
 # CSRF
 csrf = CSRFProtect(app)
@@ -337,8 +344,8 @@ def mypage():
             'id': img.id,
             'date': img.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'thumb_url': url_for('static', filename='results/' + thumb_name(img.protected_filename)),
-            'psnr': (f"{psnr_db:.2f}" if psnr_db is not None else None),  # 숫자만 넘김(단위는 템플릿에서 붙임)
-            'download_url': url_for('static', filename='results/' + img.protected_filename)
+            'psnr': (f"{psnr_db:.2f}" if psnr_db is not None else None),
+            'download_url': url_for('download_protected', image_id=img.id)  # ✅ 여기 수정
         })
     modify_history = mods
 
@@ -421,9 +428,6 @@ def delete_modify(image_id):
 def info():
     return render_template('info.html')
 
-if __name__ == '__main__':
-    app.run(debug=True)
-
 
 # 이미지 저장
 @app.get('/download/<int:image_id>')
@@ -439,3 +443,102 @@ def download_protected(image_id):
         flash("파일을 찾을 수 없습니다.")
         return redirect(url_for('mypage'))
     return send_file(path, as_attachment=True, download_name=rec.protected_filename)
+
+
+# 재검사
+def has_our_wm_meta(png_path: str) -> bool:
+    try:
+        im = Image.open(png_path)
+        info = getattr(im, "info", {}) or {}
+        return "wm_meta" in (info or {})
+    except Exception:
+        return False
+
+def extract_wm_via_api(png_path: str) -> np.ndarray | None:
+    try:
+        with open(png_path, "rb") as fp:
+            r = requests.post(f"{MATE_API}/extract_fixed_color",
+                              files={"watermarked_png": fp}, timeout=120)
+        if r.status_code != 200:
+            return None
+        buf = io.BytesIO(r.content)
+        return np.array(Image.open(buf).convert("L"), dtype=np.float32)
+    except Exception:
+        return None
+
+def load_ref_wm_resized(target_shape) -> np.ndarray | None:
+    try:
+        im = Image.open(WATERMARK_REF_PATH).convert("L")
+    except Exception:
+        return None
+    h, w = target_shape
+    im = im.resize((w, h), Image.BILINEAR)
+    return np.array(im, dtype=np.float32)
+
+def ncc_similarity_percent(a: np.ndarray, b: np.ndarray) -> float:
+    a = a.astype(np.float64); b = b.astype(np.float64)
+    a = a - a.mean(); b = b - b.mean()
+    denom = (a.std() * b.std()) + 1e-12
+    ncc = float((a * b).mean() / denom)
+    return max(0.0, min(1.0, (ncc + 1.0) / 2.0)) * 100.0
+
+
+#재검사 페이지
+@app.route('/verify', methods=['GET', 'POST'])
+def verify():
+    if request.method == 'POST':
+        if 'image' not in request.files:
+            flash("업로드된 파일이 없습니다.")
+            return redirect(url_for('verify'))
+
+        file = request.files['image']
+        if not file or file.filename == '':
+            flash("파일을 선택해주세요.")
+            return redirect(url_for('verify'))
+
+        # PNG만 지원 (wm_meta가 PNG에 저장됨)
+        is_png_ext = file.filename.lower().endswith('.png')
+        is_png_mime = (file.mimetype or '').lower() == 'image/png'
+        if not (is_png_ext and is_png_mime):
+            flash("이 페이지는 DeepShield 서비스로 워터마킹된 PNG만 지원합니다. 방지 기능으로 저장한 PNG 파일을 업로드해주세요.")
+            return redirect(url_for('verify'))
+
+        ensure_upload_dir()
+        filename = build_safe_timestamp_name('verify', file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+
+        verdict = "워터마크 없음 → 딥페이크 의심"
+        similarity = None
+
+        if has_our_wm_meta(filepath):
+            wm_est = extract_wm_via_api(filepath)
+            if wm_est is not None:
+                ref = load_ref_wm_resized(wm_est.shape)
+                if ref is not None:
+                    similarity = round(ncc_similarity_percent(wm_est, ref), 2)
+                    if similarity >= 70:
+                        verdict = "워터마크 정상 → 원본 가능성 높음"
+                    elif similarity >= 40:
+                        verdict = "워터마크 손상 → 조작 의심"
+                    else:
+                        verdict = "워터마크 불일치 → 딥페이크 의심"
+                else:
+                    verdict = "참조 워터마크 없음"
+            else:
+                verdict = "워터마크 추출 실패 → 딥페이크 의심"
+
+        session['verify_result'] = {
+            'uploaded_url': url_for('static', filename='uploads/' + filename),
+            'similarity': similarity,
+            'verdict': verdict
+        }
+        return redirect(url_for('verify'))
+
+    result = session.pop('verify_result', None)
+    return render_template('verify.html', result=result)
+
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
