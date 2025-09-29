@@ -36,4 +36,4 @@ apps/mine/
  ├── static/               # 정적 파일 (CSS, JS, 업로드 이미지 등)
  │    ├── uploads/         # 사용자가 업로드한 원본 이미지
  │    └── results/         # 워터마크 삽입 결과 이미지
- └── assets/               # 워터마크 참조 이미지 (예: hanshin.png)
+ └── assets/               # 워터마크 참조 이미지
