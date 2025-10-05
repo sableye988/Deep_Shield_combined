@@ -1,0 +1,6 @@
+
+# venv & caches (repo-wide)
+venv/
+**/venv/
+__pycache__/
+*.pyc
