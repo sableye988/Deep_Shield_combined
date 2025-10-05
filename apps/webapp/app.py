@@ -16,6 +16,11 @@ import json
 import io
 import numpy as np
 
+# ===== DF-Detector 최소 통합 =====
+# apps/webapp/df_detector_ext/{detection.py, exif_utils.py, config.json} 가 있어야 함
+from df_detector_ext.detection import deepfake_model_detect
+from df_detector_ext.exif_utils import is_photoshop_like
+# =================================
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'
@@ -39,6 +44,15 @@ MATE_API = "http://127.0.0.1:5002"
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 os.makedirs(ASSETS_DIR, exist_ok=True)
 WATERMARK_REF_PATH = os.path.join(ASSETS_DIR, "hanshin.png")
+
+# DF-Detector 설정 로드 (없으면 기본값 사용)
+try:
+    _cfg_path = os.path.join(os.path.dirname(__file__), "df_detector_ext", "config.json")
+    with open(_cfg_path, "r", encoding="utf-8") as f:
+        _CFG = json.load(f)
+except Exception:
+    _CFG = {}
+DEEPFAKE_LOW = float(_CFG.get("deepfake_threshold", 0.3))
 
 # CSRF
 csrf = CSRFProtect(app)
@@ -156,7 +170,7 @@ def logout():
     flash("로그아웃 되었습니다.")
     return redirect(url_for('index'))
 
-# 탐지 (현재는 예시 점수 — 이후 워터마크 기반 판별 로직으로 교체 가능)
+# 탐지 (DF-Detector 기반)
 @app.route('/detect', methods=['GET', 'POST'])
 def detect():
     if request.method == 'POST':
@@ -192,10 +206,50 @@ def detect():
         detect_thumb_path = os.path.join(app.config['UPLOAD_FOLDER'], detect_thumb)
         save_thumbnail(filepath, detect_thumb_path)
 
-        # 예시 점수 (임시)
-        import random
-        detect_score = round(random.uniform(0, 100), 2)
+        # === DF-Detector 추론 ===
+        try:
+            img = Image.open(filepath).convert("RGB")
+        except Exception:
+            flash("이미지를 읽는 중 오류가 발생했습니다.")
+            return redirect(url_for('detect'))
 
+        try:
+            prob_fake = float(deepfake_model_detect(img))
+            prob_fake = max(0.0, min(1.0, prob_fake))  # 안전 클램프
+        except Exception as e:
+            app.logger.exception("deepfake_model_detect 실패: %s", e)
+            flash("탐지 모델 실행 중 문제가 발생했습니다.")
+            return redirect(url_for('detect'))
+
+        try:
+            edited_flag = bool(is_photoshop_like(img))
+        except Exception:
+            edited_flag = False
+
+        if prob_fake > 0.5:
+            label = "딥페이크 의심"
+            confidence = prob_fake
+        else:
+            label = "원본 가능"
+            confidence = 1.0 - prob_fake
+
+        confidence_pct = round(confidence * 100.0, 2)
+        detect_score = confidence_pct  # UI가 %를 기대하므로 동일 사용
+
+        # 경고 메시지(선택)
+        warning = None
+        if confidence < DEEPFAKE_LOW:
+            warning = "탐지 결과 불확실: 이미지 품질이 낮거나 노이즈가 많을 수 있습니다."
+        elif DEEPFAKE_LOW <= confidence <= 0.7:
+            warning = "주의: 보정/필터 등 편집된 사진일 수 있습니다."
+        elif confidence > 0.9:
+            warning = "판별 신뢰도가 매우 높습니다."
+
+        if edited_flag:
+            hint = " (EXIF에 편집 도구 흔적 탐지)"
+            warning = (warning or "편집 흔적이 있습니다.") + hint
+
+        # DB 기록 (스키마 유지)
         new_result = DetectResult(
             user_id=user_id,
             uploaded_filename=filename,
@@ -204,11 +258,12 @@ def detect():
         db.session.add(new_result)
         db.session.commit()
 
-        # PRG
+        # PRG + 판정/메시지 포함
         session['detect_result'] = {
             'uploaded_url': url_for('static', filename='uploads/' + filename),
             'uploaded_thumb_url': url_for('static', filename='uploads/' + detect_thumb),
-            'score': detect_score
+            'score': detect_score,
+            'verdict': f"{label} ({confidence_pct}%)" + (" — " + warning if warning else "")
         }
         return redirect(url_for('detect'))
 
@@ -428,7 +483,6 @@ def delete_modify(image_id):
 def info():
     return render_template('info.html')
 
-
 # 이미지 저장
 @app.route('/download/<int:image_id>', methods=['GET'])
 def download_protected(image_id):
@@ -443,7 +497,6 @@ def download_protected(image_id):
         flash("파일을 찾을 수 없습니다.")
         return redirect(url_for('mypage'))
     return send_file(path, as_attachment=True, download_name=rec.protected_filename)
-
 
 # 재검사
 def has_our_wm_meta(png_path: str) -> bool:
@@ -482,8 +535,7 @@ def ncc_similarity_percent(a: np.ndarray, b: np.ndarray) -> float:
     ncc = float((a * b).mean() / denom)
     return max(0.0, min(1.0, (ncc + 1.0) / 2.0)) * 100.0
 
-
-#재검사 페이지
+# 재검사 페이지
 @app.route('/verify', methods=['GET', 'POST'])
 def verify():
     if request.method == 'POST':
@@ -521,24 +573,3 @@ def verify():
                         verdict = "워터마크 정상 → 원본 가능성 높음"
                     elif similarity >= 40:
                         verdict = "워터마크 손상 → 조작 의심"
-                    else:
-                        verdict = "워터마크 불일치 → 딥페이크 의심"
-                else:
-                    verdict = "참조 워터마크 없음"
-            else:
-                verdict = "워터마크 추출 실패 → 딥페이크 의심"
-
-        session['verify_result'] = {
-            'uploaded_url': url_for('static', filename='uploads/' + filename),
-            'similarity': similarity,
-            'verdict': verdict
-        }
-        return redirect(url_for('verify'))
-
-    result = session.pop('verify_result', None)
-    return render_template('verify.html', result=result)
-
-
-
-if __name__ == '__main__':
-    app.run(debug=True)
