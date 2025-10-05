@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, abort
+from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, send_file
 from models import db, ProtectedImage, User, DetectResult
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -6,10 +6,8 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_migrate import Migrate
-from flask import send_file
 from PIL import Image, ImageOps
 import os
-from shutil import copyfile
 import logging
 import requests
 import json
@@ -573,3 +571,23 @@ def verify():
                         verdict = "워터마크 정상 → 원본 가능성 높음"
                     elif similarity >= 40:
                         verdict = "워터마크 손상 → 조작 의심"
+                    else:
+                        verdict = "워터마크 불일치 → 딥페이크 의심"
+                else:
+                    verdict = "참조 워터마크 없음"
+            else:
+                verdict = "워터마크 추출 실패 → 딥페이크 의심"
+
+        session['verify_result'] = {
+            'uploaded_url': url_for('static', filename='uploads/' + filename),
+            'similarity': similarity,
+            'verdict': verdict
+        }
+        return redirect(url_for('verify'))
+
+    result = session.pop('verify_result', None)
+    return render_template('verify.html', result=result)
+
+if __name__ == '__main__':
+    # flask run 을 주로 쓰더라도, python app.py 로도 실행 가능하게 유지
+    app.run(debug=True)
