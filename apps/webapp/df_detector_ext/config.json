@@ -1,0 +1,5 @@
+{
+  "deepfake_threshold": 0.3,
+  "psnr_threshold": 35.0,
+  "ssim_threshold": 0.95
+}
