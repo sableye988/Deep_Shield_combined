@@ -33,8 +33,8 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS 시 활성화
 
-# 은성님 워터마크 API
-MATE_API = "http://127.0.0.1:5002"
+# 은성님 워터마크 API, render주소로 수정
+MATE_API = "https://deep-shield-combined-api.onrender.com"
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 os.makedirs(ASSETS_DIR, exist_ok=True)
