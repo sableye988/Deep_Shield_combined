@@ -82,6 +82,4 @@ pip install -r requirements.txt
   * FastAPI(`mate`) 실행 시: 방지 및 재검사 페이지 정상 동작
 * `assets/hanshin.png`는 워터마크 검증용 참조 이미지이므로 반드시 필요합니다.
 
-```
-원해? 제가 `README.md` 최종본을 이렇게 다듬어서 줄까?
-```
+
