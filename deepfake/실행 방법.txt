@@ -1,15 +1,28 @@
-# [컬러 유지] host 한 장 업로드 → face_marked.png(컬러) 저장
-curl.exe -X POST "http://127.0.0.1:8000/embed_fixed_single_color" `
-  -F "host=@C:\Users\정은성\Desktop\deepfake\face.jpg" `
-  -o face_marked.png
+# 경로 지정 
+$OUT = "C:\Users\정은성\Desktop\deepfake\out"  <= 본인 경로로 하시면 됩니다
+New-Item -ItemType Directory -Path $OUT -Force | Out-Null
 
-# [컬러 유지] 추출
-curl.exe -X POST "http://127.0.0.1:8000/extract_fixed_color" `
-  -F "watermarked_png=@C:\Users\정은성\Desktop\deepfake\face_marked.png" `
-  -o wm_extracted.png
+# 워터마크 삽입 코드
+curl.exe -sS --fail-with-body -w "`nHTTP %{http_code}`n" `
+  "http://127.0.0.1:8000/embed_blind" `
+  -F "host=@C:\Users\정은성\Desktop\deepfake\face.jpg;type=image/jpeg" `
+  -F "wm=@C:\Users\정은성\Desktop\deepfake\hanshin.png;type=image/png" `
+  -F "wavelet=db2" -F "level=1" -F "bands=HL,LH" -F "delta=4.0" -F "repeat=1" `
+  -o "$OUT\face_marked_blind.png"
+
+
+# 추출
+curl.exe -sS --fail-with-body -w "`nHTTP %{http_code}`n" `
+  "http://127.0.0.1:8000/extract_blind_by_wm" `
+  -F "watermarked_img=@$OUT\face_marked_blind.png;type=image/png" `
+  -F "wm=@C:\Users\정은성\Desktop\deepfake\hanshin.png;type=image/png" `
+  -F "wavelet=db2" -F "level=1" -F "bands=HL,LH" -F "delta=4.0" -F "repeat=1" `
+  -D "$OUT\extract_headers.txt" `
+  -o "$OUT\wm_extracted_blind.png"
+Get-Content "$OUT\extract_headers.txt" | Select-String "X-PSNR|X-NCC|X-BER|Content-Type|Content-Length"
 
 
 face.jpg 원본사진
 hanshin.jpg 워터마크 사진
-face_marked.png 워터마크 적용된 사진
-wm_extracted.png 워터마크 적용된 사진에서 워터마크 추출
+face_marked_blind.png 워터마크 적용된 사진
+wm_extracted_blind.png 워터마크 적용된 사진에서 워터마크 추출

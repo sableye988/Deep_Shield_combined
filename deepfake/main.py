@@ -1,140 +1,157 @@
-import io
-from pathlib import Path
-
-from fastapi import FastAPI, UploadFile, File
+# main.py
+# -------------------------------------------------------------
+# FastAPI for Blind Watermark (DWT-QIM)
+# Endpoints:
+#   - /health
+#   - /embed_blind         (host + wm => PNG)
+#   - /extract_blind       (img + wm_h + wm_w => PNG)
+#   - /extract_blind_by_wm (img + wm => PNG + 헤더로 PSNR/NCC/BER 제공)
+# -------------------------------------------------------------
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import Response, JSONResponse
 from PIL import Image
+import io
+import numpy as np
 
-from wm_core import (
-    # 그레이스케일
-    embed_pipeline, extract_pipeline,
-    array_to_png_bytes_with_meta, extract_meta_from_png,
-    # 컬러(Y 채널 유지)
-    embed_pipeline_y, extract_pipeline_y,
-    array_rgb_to_png_bytes_with_meta, extract_meta_from_png_rgb
-)
+from wm_blind import embed_blind_y, extract_blind_y
 
-app = FastAPI(title="DWT-SVD Invisible Watermark API (Fixed Params + Color Y-channel)", version="1.2.0")
+app = FastAPI(title="Blind Watermark API (DWT-QIM)")
 
-# 고정 파라미터
-WAVELET_DEFAULT = "db2"
-LEVEL_DEFAULT   = 2
-BAND_DEFAULT    = "HL"
-ALPHA_DEFAULT   = 0.12
+# ------------- metrics utils -------------
+def _psnr(a: np.ndarray, b: np.ndarray, maxval: float = 255.0) -> float:
+    a = a.astype(np.float64); b = b.astype(np.float64)
+    mse = np.mean((a - b) ** 2)
+    if mse <= 1e-12:
+        return float('inf')
+    import math
+    return 20.0 * math.log10(maxval) - 10.0 * math.log10(mse)
 
-# 서버에 두는 기본 워터마크 파일 경로 (클라이언트는 host만 업로드)
-WATERMARK_DEFAULT_PATH = Path("hanshin.png")
+def _ncc(a: np.ndarray, b: np.ndarray) -> float:
+    a = a.astype(np.float64).ravel(); b = b.astype(np.float64).ravel()
+    a -= a.mean(); b -= b.mean()
+    denom = (np.linalg.norm(a) * np.linalg.norm(b) + 1e-12)
+    return float(np.dot(a, b) / denom)
 
+def _ber_fixed(est: np.ndarray, gt: np.ndarray, thr: float = 128.0) -> float:
+    estb = (est >= thr).astype(np.uint8)
+    gtb  = (gt  >= thr).astype(np.uint8)
+    H, W = gtb.shape
+    estb = estb[:H, :W]
+    return float(np.mean(estb != gtb))
+
+# ------------- health -------------
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"ok": True}
 
-# ---------------------------
-# [추천] 컬러 유지(Y 채널) 고정 파라미터
-# ---------------------------
-@app.post("/embed_fixed_single_color")
-async def embed_fixed_single_color(
-    host: UploadFile = File(..., description="원본 이미지만 업로드 (워터마크는 서버의 hanshin.png 사용)")
+# ------------- embed (blind) -------------
+@app.post("/embed_blind")
+async def embed_blind(
+    host: UploadFile = File(..., description="원본 이미지 (JPG/PNG 등)"),
+    wm:   UploadFile = File(..., description="워터마크 이미지 (흑백 권장)"),
+    wavelet: str = Form("db2"),
+    level:   int = Form(2),
+    bands:   str = Form("HL,LH"),   # "HL,LH" or "HL,LH,HH"
+    delta:  float = Form(4.0),
+    repeat: int   = Form(3),
 ):
-    if not WATERMARK_DEFAULT_PATH.exists():
-        return JSONResponse(status_code=500, content={
-            "detail": f"기본 워터마크 파일을 찾을 수 없습니다: {WATERMARK_DEFAULT_PATH.resolve()}"
-        })
+    try:
+        host_im = Image.open(io.BytesIO(await host.read())).convert("RGB")
+        wm_im   = Image.open(io.BytesIO(await wm.read())).convert("L")
+        bands_tuple = tuple([b.strip() for b in bands.split(",") if b.strip()])
 
-    host_img = Image.open(host.file)
-    wm_img   = Image.open(str(WATERMARK_DEFAULT_PATH))
+        marked = embed_blind_y(
+            host_img=host_im, wm_img=wm_im,
+            wavelet=wavelet, level=level, bands=bands_tuple,
+            delta=delta, repeat=repeat
+        )
+        out = io.BytesIO()
+        marked.save(out, format="PNG")
+        return Response(
+            content=out.getvalue(),
+            media_type="image/png",
+            headers={"Content-Disposition": 'attachment; filename="face_marked_blind.png"'}
+        )
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"detail": str(e)})
 
-    out_rgb, meta, psnr_db = embed_pipeline_y(
-        host_img=host_img, wm_img=wm_img,
-        wavelet=WAVELET_DEFAULT, level=LEVEL_DEFAULT,
-        band=BAND_DEFAULT, alpha=ALPHA_DEFAULT
-    )
-    meta_with_psnr = {
-        **meta, "psnr_db": psnr_db, "fixed_params": {
-            "wavelet": WAVELET_DEFAULT, "level": LEVEL_DEFAULT,
-            "band": BAND_DEFAULT, "alpha": ALPHA_DEFAULT
-        }, "wm_src": str(WATERMARK_DEFAULT_PATH)
-    }
-
-    png_bytes = array_rgb_to_png_bytes_with_meta(out_rgb, meta_with_psnr)
-    return Response(
-        content=png_bytes,
-        media_type="image/png",
-        headers={"Content-Disposition": 'attachment; filename="face_marked.png"'}
-    )
-
-@app.post("/extract_fixed_color")
-async def extract_fixed_color(
-    watermarked_png: UploadFile = File(..., description="워터마크 삽입된 컬러 PNG(내부 wm_meta 포함)")
+# ------------- extract (blind) with wm size -------------
+@app.post("/extract_blind")
+async def extract_blind(
+    watermarked_img: UploadFile = File(..., description="블라인드 방식으로 워터마크 삽입된 이미지"),
+    wm_h: int = Form(..., description="워터마크 높이"),
+    wm_w: int = Form(..., description="워터마크 너비"),
+    wavelet: str = Form("db2"),
+    level:   int = Form(2),
+    bands:   str = Form("HL,LH"),
+    delta:  float = Form(4.0),
+    repeat: int   = Form(3),
 ):
-    data = await watermarked_png.read()
-    bio  = io.BytesIO(data)
-    meta, im_rgb = extract_meta_from_png_rgb(bio)
+    try:
+        im = Image.open(io.BytesIO(await watermarked_img.read())).convert("RGB")
+        bands_tuple = tuple([b.strip() for b in bands.split(",") if b.strip()])
 
-    wm_est_arr = extract_pipeline_y(watermarked_img=im_rgb, meta=meta)
-    out = io.BytesIO()
-    Image.fromarray(wm_est_arr.astype('uint8'), mode='L').save(out, format="PNG")
-    return Response(
-        content=out.getvalue(),
-        media_type="image/png",
-        headers={"Content-Disposition": 'attachment; filename="wm_extracted.png"'}
-    )
+        wm_rec = extract_blind_y(
+            img_rgb=im, wm_shape=(wm_h, wm_w),
+            wavelet=wavelet, level=level, bands=bands_tuple,
+            delta=delta, repeat=repeat
+        )
+        out = io.BytesIO()
+        Image.fromarray(wm_rec, "L").save(out, format="PNG")
+        return Response(
+            content=out.getvalue(),
+            media_type="image/png",
+            headers={"Content-Disposition": 'attachment; filename="wm_extracted_blind.png"'}
+        )
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"detail": str(e)})
 
-# ---------------------------
-# (옵션) 그레이스케일 고정 파라미터 (원래 버전 호환)
-# ---------------------------
-@app.post("/embed_fixed_single")
-async def embed_fixed_single(
-    host: UploadFile = File(..., description="원본 이미지만 업로드 (워터마크는 서버의 hanshin.png 사용)")
+# ------------- extract (blind) by wm image + return metrics in headers -------------
+@app.post("/extract_blind_by_wm")
+async def extract_blind_by_wm(
+    watermarked_img: UploadFile = File(..., description="블라인드 방식으로 워터마크 삽입된 이미지"),
+    wm: UploadFile = File(..., description="원본 워터마크 이미지(크기 자동 인식, PSNR 비교용)"),
+    wavelet: str = Form("db2"),
+    level:   int = Form(2),
+    bands:   str = Form("HL,LH"),
+    delta:  float = Form(4.0),
+    repeat: int   = Form(3),
 ):
-    if not WATERMARK_DEFAULT_PATH.exists():
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"기본 워터마크 파일을 찾을 수 없습니다: {WATERMARK_DEFAULT_PATH.resolve()}"}
+    """
+    - 추출 PNG를 파일로 반환.
+    - 응답 헤더에 X-PSNR, X-NCC, X-BER(고정128) 제공.
+    """
+    try:
+        im = Image.open(io.BytesIO(await watermarked_img.read())).convert("RGB")
+        wm_im_gt = Image.open(io.BytesIO(await wm.read())).convert("L")
+        wm_h, wm_w = wm_im_gt.height, wm_im_gt.width
+        bands_tuple = tuple([b.strip() for b in bands.split(",") if b.strip()])
+
+        # 추출 (uint8 0/255)
+        wm_rec = extract_blind_y(
+            img_rgb=im, wm_shape=(wm_h, wm_w),
+            wavelet=wavelet, level=level, bands=bands_tuple,
+            delta=delta, repeat=repeat
         )
 
-    host_img = Image.open(host.file)
-    wm_img   = Image.open(str(WATERMARK_DEFAULT_PATH))
+        # 지표 계산
+        gt_arr  = np.array(wm_im_gt, dtype=np.float32)
+        rec_arr = wm_rec.astype(np.float32)
+        psnr_val = _psnr(rec_arr, gt_arr)
+        ncc_val  = _ncc (rec_arr, gt_arr)
+        ber_val  = _ber_fixed(rec_arr, gt_arr, thr=128.0)
 
-    watermarked_arr, meta, psnr_db = embed_pipeline(
-        host_img=host_img,
-        wm_img=wm_img,
-        wavelet=WAVELET_DEFAULT,
-        level=LEVEL_DEFAULT,
-        band=BAND_DEFAULT,
-        alpha=ALPHA_DEFAULT
-    )
-    meta_with_psnr = {
-        **meta,
-        "psnr_db": psnr_db,
-        "fixed_params": {
-            "wavelet": WAVELET_DEFAULT,
-            "level": LEVEL_DEFAULT,
-            "band": BAND_DEFAULT,
-            "alpha": ALPHA_DEFAULT,
-        },
-        "wm_src": str(WATERMARK_DEFAULT_PATH)
-    }
-    png_bytes = array_to_png_bytes_with_meta(watermarked_arr, meta_with_psnr)
-    return Response(
-        content=png_bytes,
-        media_type="image/png",
-        headers={"Content-Disposition": 'attachment; filename="face_marked.png"'}
-    )
-
-@app.post("/extract_fixed")
-async def extract_fixed(
-    watermarked_png: UploadFile = File(..., description="워터마크 삽입 PNG(내부에 wm_meta 포함)")
-):
-    data = await watermarked_png.read()
-    bio  = io.BytesIO(data)
-    meta, im = extract_meta_from_png(bio)
-    wm_est_arr = extract_pipeline(watermarked_img=im, meta=meta)
-
-    out = io.BytesIO()
-    Image.fromarray(wm_est_arr.astype('uint8'), mode='L').save(out, format="PNG")
-    return Response(
-        content=out.getvalue(),
-        media_type="image/png",
-        headers={"Content-Disposition": 'attachment; filename="wm_extracted.png"'}
-    )
+        out = io.BytesIO()
+        Image.fromarray(wm_rec, "L").save(out, format="PNG")
+        return Response(
+            content=out.getvalue(),
+            media_type="image/png",
+            headers={
+                "Content-Disposition": 'attachment; filename="wm_extracted_blind.png"',
+                "X-PSNR": f"{psnr_val:.2f}",
+                "X-NCC": f"{ncc_val:.3f}",
+                "X-BER": f"{ber_val:.4f}",
+            }
+        )
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"detail": str(e)})
