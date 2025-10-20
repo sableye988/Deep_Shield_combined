@@ -21,3 +21,7 @@ __pycache__/
 !/instance/.gitkeep
 /apps/webapp/instance/*
 !/apps/webapp/instance/.gitkeep
+# assets outputs & caches (mate sync)
+apps/webapp/assets/__pycache__/
+apps/webapp/assets/out/
+apps/mate/**/__pycache__/
