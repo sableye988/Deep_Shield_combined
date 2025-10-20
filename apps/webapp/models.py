@@ -4,11 +4,24 @@ from datetime import datetime
 db = SQLAlchemy()
 
 class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)  # 정수형 ID
-    username = db.Column(db.String(100), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
+    id = db.Column(db.Integer, primary_key=True)
+
+    # 로컬 계정(아이디/비번)
+    username = db.Column(db.String(100), unique=True, nullable=True)
+    password_hash = db.Column(db.String(255), nullable=True)
+
+    # 소셜 계정
+    provider = db.Column(db.String(50), nullable=True, index=True)        # 예) 'google'
+    provider_id = db.Column(db.String(255), nullable=True, index=True)    # 예) Google sub
+    email = db.Column(db.String(255), nullable=True, index=True)
+    name = db.Column(db.String(255), nullable=True)
+    picture = db.Column(db.String(512), nullable=True)
 
     protected_images = db.relationship('ProtectedImage', backref='user', lazy=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('provider', 'provider_id', name='uq_provider_pid'),
+    )
 
 class ProtectedImage(db.Model):
     id = db.Column(db.Integer, primary_key=True)

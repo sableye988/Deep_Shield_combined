@@ -1,26 +1,29 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, abort
+from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, send_file
 from models import db, ProtectedImage, User, DetectResult
 from datetime import datetime
-from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_migrate import Migrate
-from flask import send_file
 from PIL import Image, ImageOps
+from authlib.integrations.flask_client import OAuth
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os
-from shutil import copyfile
 import logging
 import requests
 import json
 import io
 import numpy as np
 
-
 app = Flask(__name__)
-app.secret_key = 'your-secret-key'
 
-# 기본 설정
+# ── 환경변수 기반 보안키(배포에서 필수) ──
+app.secret_key = os.environ.get('SESSION_SECRET', 'dev-secret')
+
+# 프록시 뒤 HTTPS 인식(렌더 배포 시 권장)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
+# ── 기본 설정 ──
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
@@ -28,27 +31,41 @@ app.config['RESULT_FOLDER'] = 'static/results'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['RESULT_FOLDER'], exist_ok=True)
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
-# 배포 시 세션 보안 권장 설정
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS 시 활성화
 
-# 은성님 워터마크 API, render주소로 수정
+# 세션/쿠키
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+# 프런트/백엔드 같은 도메인이면 Lax로도 충분
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# 프런트가 다른 도메인(예: GitHub Pages/Netlify)에서 열고,
+# 백엔드가 onrender.com인 "교차 도메인"이라면 아래 두 줄 사용:
+# app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+# app.config['SESSION_COOKIE_SECURE'] = True
+
+# ── 외부 API (워터마크 FastAPI) ──
 MATE_API = "https://deep-shield-combined-api.onrender.com"
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 os.makedirs(ASSETS_DIR, exist_ok=True)
 WATERMARK_REF_PATH = os.path.join(ASSETS_DIR, "hanshin.png")
 
-# CSRF
+# ── OAuth(구글) ──
+oauth = OAuth(app)
+google = oauth.register(
+    name="google",
+    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+# ── CSRF ──
 csrf = CSRFProtect(app)
 
-# 템플릿에서 {{ csrf_token() }} 사용 가능하게
 @app.context_processor
 def inject_csrf():
     return dict(csrf_token=generate_csrf)
 
-# 허용 확장자
+# ── 파일 유틸 ──
 ALLOWED_EXT = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
 
 def allowed_file(filename: str) -> bool:
@@ -78,7 +95,6 @@ def save_thumbnail(src_path: str, dst_path: str, max_size=(600, 600)):
         im.thumbnail(max_size)
         im.save(dst_path, optimize=True, quality=85)
     except Exception:
-        # 썸네일 실패해도 서비스 계속
         pass
 
 def read_psnr_from_png(png_path: str):
@@ -94,75 +110,85 @@ def read_psnr_from_png(png_path: str):
     except Exception:
         return None
 
-# DB 초기화
+# ── DB 초기화 ──
 db.init_app(app)
 migrate = Migrate(app, db)
 
-# 에러 핸들러
+# ── 에러 핸들러 ──
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(e):
     flash("파일이 너무 큽니다. 최대 20MB까지 업로드할 수 있어요.")
     return redirect(request.referrer or url_for('index'))
 
-# ---------------------------
-# 라우트
+# ── 라우트 ──
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# 회원가입
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+# 과거 경로 호환: /login, /signup 접근 시 구글 로그인으로 보냄
+@app.get('/login')
+def login_redirect_to_google():
+    return redirect(url_for('google_login'))
 
-        if User.query.filter_by(username=username).first():
-            flash("이미 존재하는 아이디입니다.")
-            return redirect(url_for('signup'))
+@app.get('/signup')
+def signup_redirect_to_google():
+    flash("구글 로그인만 지원합니다.")
+    return redirect(url_for('google_login'))
 
-        hashed_pw = generate_password_hash(password)
-        new_user = User(username=username, password_hash=hashed_pw)
-        db.session.add(new_user)
+# 구글 로그인
+@app.get("/auth/google/login")
+def google_login():
+    # 환경변수 미설정 시 빠른 안내
+    if not os.environ.get("GOOGLE_CLIENT_ID") or not os.environ.get("GOOGLE_CLIENT_SECRET"):
+        flash("서버에 GOOGLE_CLIENT_ID/SECRET 환경변수가 설정되어 있지 않습니다.")
+        return redirect(url_for('index'))
+
+    redirect_uri = url_for("google_callback", _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+# 구글 콜백
+@app.get("/auth/google/callback")
+def google_callback():
+    token = google.authorize_access_token()
+    userinfo = token.get("userinfo") or {}
+    sub = userinfo.get("sub")
+    if not sub:
+        flash("Google 사용자 식별자(sub)를 가져오지 못했습니다.")
+        return redirect(url_for('index'))
+
+    # provider + provider_id 로 upsert
+    user = User.query.filter_by(provider='google', provider_id=sub).first()
+
+    if not user:
+        user = User(
+            provider='google',
+            provider_id=sub,
+            email=userinfo.get("email"),
+            name=userinfo.get("name"),
+            picture=userinfo.get("picture"),
+        )
+        db.session.add(user)
         db.session.commit()
-        flash("회원가입이 완료되었습니다.")
-        return redirect(url_for('login'))
 
-    return render_template('signup.html')
+    session['user_id'] = user.id
+    session['username'] = user.name or user.email or user.username or 'user'
+    flash("구글 계정으로 로그인되었습니다.")
+    return redirect(url_for('mypage'))
 
-# 로그인
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password_hash, password):
-            session['user_id'] = user.id
-            session['username'] = user.username
-            flash("로그인 성공!")
-            return redirect(url_for('mypage'))
-        else:
-            flash("로그인 실패: 아이디 또는 비밀번호가 틀립니다.")
-            return redirect(url_for('login'))
-
-    return render_template('login.html')
-
-# 로그아웃 (GET)
+# 로그아웃
 @app.route('/logout')
 def logout():
     session.clear()
     flash("로그아웃 되었습니다.")
     return redirect(url_for('index'))
 
-# 탐지 (현재는 예시 점수 — 이후 워터마크 기반 판별 로직으로 교체 가능)
+# 탐지
 @app.route('/detect', methods=['GET', 'POST'])
 def detect():
     if request.method == 'POST':
         if 'user_id' not in session:
             flash("로그인이 필요합니다.")
-            return redirect(url_for('login'))
+            return redirect(url_for('login_redirect_to_google'))
 
         if 'image' not in request.files:
             flash("업로드된 파일이 없습니다.")
@@ -192,7 +218,7 @@ def detect():
         detect_thumb_path = os.path.join(app.config['UPLOAD_FOLDER'], detect_thumb)
         save_thumbnail(filepath, detect_thumb_path)
 
-        # 예시 점수 (임시)
+        # (임시) 탐지 점수: 실제 모델 붙이면 교체
         import random
         detect_score = round(random.uniform(0, 100), 2)
 
@@ -204,7 +230,6 @@ def detect():
         db.session.add(new_result)
         db.session.commit()
 
-        # PRG
         session['detect_result'] = {
             'uploaded_url': url_for('static', filename='uploads/' + filename),
             'uploaded_thumb_url': url_for('static', filename='uploads/' + detect_thumb),
@@ -221,7 +246,7 @@ def prevent():
     if request.method == 'POST':
         if 'user_id' not in session:
             flash("로그인이 필요합니다.")
-            return redirect(url_for('login'))
+            return redirect(url_for('login_redirect_to_google'))
 
         if 'image' not in request.files:
             flash("업로드된 파일이 없습니다.")
@@ -239,7 +264,6 @@ def prevent():
             flash("이미지 형식의 파일이 아닙니다.")
             return redirect(url_for('prevent'))
 
-        # 워터마크 강도(표시용)
         strength = 0.5
         user_id = session['user_id']
         ensure_upload_dir()
@@ -286,14 +310,13 @@ def prevent():
         # DB 기록
         new_record = ProtectedImage(
             user_id=user_id,
-            original_filename=original_filename,      # 업로드/원본은 uploads 폴더
-            protected_filename=protected_filename,    # 결과는 results 폴더
+            original_filename=original_filename,
+            protected_filename=protected_filename,
             watermark_strength=strength
         )
         db.session.add(new_record)
         db.session.commit()
 
-        # PRG
         session['prevent_result'] = {
             "original_url": url_for('static', filename='uploads/' + original_filename),
             "modified_url": url_for('static', filename='results/' + protected_filename),
@@ -305,12 +328,12 @@ def prevent():
     result = session.pop('prevent_result', None)
     return render_template('prevent.html', result=result)
 
-# 마이페이지 (페이징)
+# 마이페이지
 @app.route('/mypage')
 def mypage():
     if 'user_id' not in session:
         flash("로그인이 필요합니다.")
-        return redirect(url_for('login'))
+        return redirect(url_for('login_redirect_to_google'))
 
     user_id = session['user_id']
     dpage = request.args.get('dpage', 1, type=int)
@@ -335,7 +358,6 @@ def mypage():
         for d in detect_pagination.items
     ]
 
-    # 결과 PNG에서 PSNR 읽어 표시용으로 추가
     mods = []
     for img in modify_pagination.items:
         protected_path = os.path.join(app.config['RESULT_FOLDER'], img.protected_filename)
@@ -357,26 +379,24 @@ def mypage():
         modify_pagination=modify_pagination
     )
 
-# 탐지 기록 삭제 (POST + CSRF)
+# 탐지 기록 삭제
 @app.post('/delete_detect/<int:detect_id>')
 def delete_detect(detect_id):
     if 'user_id' not in session:
         flash("로그인이 필요합니다.")
-        return redirect(url_for('login'))
+        return redirect(url_for('login_redirect_to_google'))
 
     rec = DetectResult.query.get_or_404(detect_id)
     if rec.user_id != session['user_id']:
         abort(403)
 
     try:
-        # 파일 삭제
         for fname in [rec.uploaded_filename, thumb_name(rec.uploaded_filename)]:
             if fname:
                 fpath = os.path.join(app.config['UPLOAD_FOLDER'], fname)
                 if os.path.exists(fpath):
                     os.remove(fpath)
 
-        # DB 삭제
         db.session.delete(rec)
         db.session.commit()
         flash("탐지 기록이 삭제되었습니다.")
@@ -386,33 +406,30 @@ def delete_detect(detect_id):
         flash("삭제 중 오류가 발생했습니다. 다시 시도해주세요.")
     return redirect(url_for('mypage'))
 
-# 변형 기록 삭제 (POST + CSRF)
+# 변형 기록 삭제
 @app.post('/delete_modify/<int:image_id>')
 def delete_modify(image_id):
     if 'user_id' not in session:
         flash("로그인이 필요합니다.")
-        return redirect(url_for('login'))
+        return redirect(url_for('login_redirect_to_google'))
 
     rec = ProtectedImage.query.get_or_404(image_id)
     if rec.user_id != session['user_id']:
         abort(403)
 
     try:
-        # 원본은 uploads에서 삭제
         if rec.original_filename:
             for fname in [rec.original_filename, thumb_name(rec.original_filename)]:
                 fpath = os.path.join(app.config['UPLOAD_FOLDER'], fname)
                 if os.path.exists(fpath):
                     os.remove(fpath)
 
-        # 결과는 results에서 삭제
         if rec.protected_filename:
             for fname in [rec.protected_filename, thumb_name(rec.protected_filename)]:
                 fpath = os.path.join(app.config['RESULT_FOLDER'], fname)
                 if os.path.exists(fpath):
                     os.remove(fpath)
 
-        # DB 삭제
         db.session.delete(rec)
         db.session.commit()
         flash("이미지 변형 기록이 삭제되었습니다.")
@@ -428,13 +445,12 @@ def delete_modify(image_id):
 def info():
     return render_template('info.html')
 
-
-# 이미지 저장
+# 결과 PNG 다운로드
 @app.route('/download/<int:image_id>', methods=['GET'])
 def download_protected(image_id):
     if 'user_id' not in session:
         flash("로그인이 필요합니다.")
-        return redirect(url_for('login'))
+        return redirect(url_for('login_redirect_to_google'))
     rec = ProtectedImage.query.get_or_404(image_id)
     if rec.user_id != session['user_id']:
         abort(403)
@@ -444,8 +460,7 @@ def download_protected(image_id):
         return redirect(url_for('mypage'))
     return send_file(path, as_attachment=True, download_name=rec.protected_filename)
 
-
-# 재검사
+# ── 재검사 유틸 ──
 def has_our_wm_meta(png_path: str) -> bool:
     try:
         im = Image.open(png_path)
@@ -482,8 +497,7 @@ def ncc_similarity_percent(a: np.ndarray, b: np.ndarray) -> float:
     ncc = float((a * b).mean() / denom)
     return max(0.0, min(1.0, (ncc + 1.0) / 2.0)) * 100.0
 
-
-#재검사 페이지
+# 재검사
 @app.route('/verify', methods=['GET', 'POST'])
 def verify():
     if request.method == 'POST':
@@ -496,7 +510,6 @@ def verify():
             flash("파일을 선택해주세요.")
             return redirect(url_for('verify'))
 
-        # PNG만 지원 (wm_meta가 PNG에 저장됨)
         is_png_ext = file.filename.lower().endswith('.png')
         is_png_mime = (file.mimetype or '').lower() == 'image/png'
         if not (is_png_ext and is_png_mime):
@@ -537,8 +550,6 @@ def verify():
 
     result = session.pop('verify_result', None)
     return render_template('verify.html', result=result)
-
-
 
 if __name__ == '__main__':
     app.run(debug=True)
