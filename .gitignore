@@ -5,3 +5,19 @@ venv/
 __pycache__/
 *.pyc
 .venv/
+# local env & caches
+.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# local sqlite
+*.db
+*.sqlite
+*.sqlite3
+
+# Flask instance dirs
+/instance/*
+!/instance/.gitkeep
+/apps/webapp/instance/*
+!/apps/webapp/instance/.gitkeep
