@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, send_file
 from models import db, ProtectedImage, User, DetectResult
 from datetime import datetime
@@ -18,7 +17,7 @@ import io
 import time
 import numpy as np
 
-# ---------- 네트워크 세션/리트라이 ----------
+# ---------- 네트워크 세션 ----------
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -42,7 +41,6 @@ logging.getLogger("werkzeug").setLevel(logging.INFO)
 # ── 보안키 ──
 app.secret_key = os.environ.get('SESSION_SECRET', 'dev-secret')
 
-# ── 프록시 뒤 HTTPS 인식(배포 시) ──
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 # ── 기본 설정 ──
@@ -59,17 +57,13 @@ app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024
 # 세션/쿠키
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# 교차 도메인일 때:
-# app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-# app.config['SESSION_COOKIE_SECURE'] = True
 
 # ── 외부 FastAPI ──
-# ⚠️ 여기 값이 네가 올린 main.py가 돌아가는 FastAPI의 베이스 URL이어야 함
 MATE_API = os.environ.get("MATE_API", "https://deep-shield-combined-api.onrender.com")
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 os.makedirs(ASSETS_DIR, exist_ok=True)
-WATERMARK_REF_PATH = os.path.join(ASSETS_DIR, "hanshin.png")  # 반드시 존재해야 함
+WATERMARK_REF_PATH = os.path.join(ASSETS_DIR, "hanshin.png") 
 
 # 워터마크 참조 이미지 메모리 캐싱
 try:
@@ -229,7 +223,7 @@ def logout():
     flash("로그아웃 되었습니다.")
     return redirect(url_for('index'))
 
-# ── 탐지(데모) ──
+# ── 탐지 ──
 @app.route('/detect', methods=['GET', 'POST'])
 def detect():
     if request.method == 'POST':
@@ -283,7 +277,7 @@ def detect():
     result = session.pop('detect_result', None)
     return render_template('detect.html', result=result)
 
-# ── 방지: 워터마크 삽입 (/embed_blind) ──
+# ── 방지: 워터마크 삽입 ──
 @app.route('/prevent', methods=['GET', 'POST'])
 def prevent():
     if request.method == 'POST':
@@ -314,7 +308,7 @@ def prevent():
         original_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
         file.save(original_path)
 
-# ---------- 외부 FastAPI 호출: /embed_fixed_single_color ----------
+# ---------- 외부 FastAPI 호출 ----------
         try:
             if WM_BYTES is None:
                 flash("내부 워터마크 참조 이미지를 불러오지 못했습니다.")
@@ -327,7 +321,7 @@ def prevent():
                     "wm_png":   ("wm.png",   io.BytesIO(WM_BYTES), "image/png"),    # ← 필드명 교체``
                 }
                 data = {"alpha": alpha}
-``
+
                 t0 = time.perf_counter()
                 r = SESSION.post(
                     f"{MATE_API}/embed_fixed_single_color",   # ← 엔드포인트 교체
@@ -353,7 +347,7 @@ def prevent():
         with open(protected_path, "wb") as out:
             out.write(r.content)
 
-        # PSNR(meta) 있을 수도/없을 수도
+        # PSNR
         psnr_db = read_psnr_from_png(protected_path)
         if psnr_db is not None:
             flash(f"워터마킹 PSNR: {psnr_db:.2f} dB")
@@ -369,7 +363,7 @@ def prevent():
             user_id=user_id,
             original_filename=original_filename,
             protected_filename=protected_filename,
-            watermark_strength=0.5  # 표기용(블라인드 파라미터와 직접 연동 아님)
+            watermark_strength=0.5  
         )
         db.session.add(new_record)
         db.session.commit()
@@ -509,7 +503,7 @@ def download_protected(image_id):
         return redirect(url_for('mypage'))
     return send_file(path, as_attachment=True, download_name=rec.protected_filename)
 
-# ---------- 추출 호출 유틸 (FastAPI 스펙 일치) ----------
+# ---------- 추출 호출 유틸 ----------
 def try_extract_wm_and_metrics_via_api(png_path: str):
     """
     1) /extract_fixed_color  (watermarked_png + wm_png + alpha)
@@ -519,7 +513,6 @@ def try_extract_wm_and_metrics_via_api(png_path: str):
     if WM_BYTES is None:
         return None, None, "참조 워터마크 없음"
 
-    # 1) color 버전 (wm_png까지 같이 보내서 유사도 헤더를 기대할 수 있으면 사용)
     try:
         with open(png_path, "rb") as img_fp:
             files = {
@@ -535,7 +528,6 @@ def try_extract_wm_and_metrics_via_api(png_path: str):
     except Exception as e:
         reason = f"/extract_fixed_color 예외: {e}"
 
-    # 2) 기본 버전 (워터마크 파일 안 보냄)
     try:
         with open(png_path, "rb") as img_fp:
             files = {"watermarked_png": ("image.png", img_fp, "image/png")}
@@ -561,7 +553,7 @@ def verify():
             flash("파일을 선택해주세요.")
             return redirect(url_for('verify'))
 
-        # PNG 권장(필수는 아님)
+        # PNG 권장
         is_png_ext = file.filename.lower().endswith('.png')
         is_png_mime = (file.mimetype or '').lower() == 'image/png'
         if not (is_png_ext and is_png_mime):
@@ -590,7 +582,6 @@ def verify():
                 out.write(extracted_png)
             wm_preview_url = url_for('static', filename=f"results/{wm_preview_name}")
 
-            # (1) 헤더 지표 사용
             if hdrs:
                 try: psnr = float(hdrs.get("X-PSNR"))
                 except: pass
@@ -599,7 +590,6 @@ def verify():
                 try: ber  = float(hdrs.get("X-BER"))
                 except: pass
 
-            # (2) 없으면 로컬 계산
             if (psnr is None or ncc is None or ber is None) and WM_REF_IM is not None:
                 try:
                     rec_im = Image.open(wm_preview_path).convert("L")
@@ -613,7 +603,6 @@ def verify():
                 except Exception as e:
                     app.logger.warning("local metric calc fail: %s", e)
 
-            # similarity(%) 계산
             if ncc is not None:
                 similarity = round(max(0.0, min(1.0, (ncc + 1.0) / 2.0)) * 100.0, 2)
 
@@ -650,7 +639,7 @@ def verify():
 def info():
     return render_template('info.html')
 
-# ── API 워밍업(첫 요청 1회만) ──
+# ── API  ──
 _warmup_lock = Lock()
 _warmed_up = False
 
