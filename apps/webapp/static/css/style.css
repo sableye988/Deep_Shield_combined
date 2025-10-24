@@ -385,3 +385,15 @@ main { flex: 1; }
 /* 재검사 결과 이미지도 기존 박스 규칙 따르도록 */
 .result-metrics { max-width: 560px; }
 
+/* verify 전용 시각 구분용 */
+.result-images div p {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.result-images img[alt="추출된 워터마크 미리보기"] {
+  border: 2px solid #007BFF;
+  background-color: #fff;
+  padding: 4px;
+  box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+}
