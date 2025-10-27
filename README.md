@@ -2,78 +2,24 @@
 ````markdown
 # Deep Shield 실행 가이드
 
-## 1. Python 환경 준비
-- Python **3.12 이상 권장**
+git clone https://github.com/sableye988/Deep_Shield_combined.git
+cd Deep_Shield_combined
 
-### 1-1. 가상환경 생성
-```bash
-python -m venv venv
-````
+# 가상환경 생성 & 활성화 (Windows PowerShell)
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 
-### 1-2. 가상환경 활성화
-
-* **Windows (PowerShell):**
-
-  ```bash
-  venv\Scripts\activate
-  ```
-* **Windows (Git Bash):**
-
-  ```bash
-  source venv/Scripts/activate
-  ```
-* **macOS / Linux:**
-
-  ```bash
-  source venv/bin/activate
-  ```
-
-### 1-3. 의존성 설치
-
-```bash
-pip install --upgrade pip
+# FastAPI(워터마크 API)
+cd deepfake
 pip install -r requirements.txt
-```
+uvicorn main:app --host 0.0.0.0 --port 8000
 
----
-
-## 2. 데이터베이스 (최초 실행 시)
-
-* DB: **SQLite (`site.db`)**
-* 마이그레이션 실행:
-
-  ```bash
-  flask db upgrade
-  ```
-
----
-
-## 3. 서버 실행
-
-**두 개의 서버**가 필요합니다.
-
-* **터미널 1 (FastAPI: 워터마크 API 서버)**
-
-  ```bash
-  cd apps/mate
-  uvicorn main:app --reload --port 5002
-  ```
-
-* **터미널 2 (Flask: 웹사이트 서버)**
-
-  ```bash
-  cd apps/mine
-  venv\Scripts\activate   # 또는 source venv/bin/activate
-  flask run
-  ```
-
-  또는
-
-  ```bash
-  python app.py
-  ```
-
----
+# 새 터미널 열고 Flask(Web)
+cd apps\webapp
+pip install -r requirements.txt
+# 환경변수(선택): SESSION_SECRET, GOOGLE_CLIENT_ID/SECRET
+# MATE_API 미설정이면 기본 http://127.0.0.1:8000 사용
+flask run
 
 ## 4. 유의사항
 
