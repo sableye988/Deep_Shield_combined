@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ````markdown
 # Deep Shield 실행 가이드
 
@@ -29,5 +28,3 @@ flask run
   * FastAPI(`mate`) 실행 시: 방지 및 재검사 페이지 정상 동작
 * `assets/hanshin.png`는 워터마크 검증용 참조 이미지이므로 반드시 필요합니다.
 =======
-# deepfake_blind
->>>>>>> fe9050199043b196cd8ac9a496563002dd1742d7
