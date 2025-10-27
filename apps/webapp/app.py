@@ -27,8 +27,7 @@ SESSION.headers.update({"Connection": "keep-alive"})
 _adapter = HTTPAdapter(
     pool_connections=10,
     pool_maxsize=10,
-    max_retries=Retry(total=2, backoff_factor=0.2,
-                      status_forcelist=[429, 500, 502, 503, 504]),
+    max_retries=Retry(total=2, backoff_factor=0.2, status_forcelist=[429, 500, 502, 503, 504]),
 )
 SESSION.mount("https://", _adapter)
 SESSION.mount("http://", _adapter)
@@ -59,11 +58,11 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # ── 외부 FastAPI ──
-MATE_API = os.environ.get("MATE_API", "https://deep-shield-combined-api.onrender.com")
+MATE_API = os.environ.get("MATE_API", "http://127.0.0.1:8000")  # ★ 딥페이크/워터마크 API 베이스
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 os.makedirs(ASSETS_DIR, exist_ok=True)
-WATERMARK_REF_PATH = os.path.join(ASSETS_DIR, "hanshin.png") 
+WATERMARK_REF_PATH = os.path.join(ASSETS_DIR, "hanshin.png")
 
 # 워터마크 참조 이미지 메모리 캐싱
 try:
@@ -176,6 +175,10 @@ def handle_file_too_large(e):
 def index():
     return render_template('index.html')
 
+@app.route('/info')
+def info():
+    return render_template('info.html')
+
 @app.get('/login')
 def login_redirect_to_google():
     return redirect(url_for('google_login'))
@@ -256,8 +259,26 @@ def detect():
         detect_thumb = thumb_name(filename)
         save_thumbnail(filepath, os.path.join(app.config['UPLOAD_FOLDER'], detect_thumb))
 
-        import random
-        detect_score = round(random.uniform(0, 100), 2)
+        # (변경) 외부 FastAPI /api/detect 호출로 통일  # ★
+        try:
+            with open(filepath, "rb") as fp:
+                files = {"file": ("image.png", fp, "image/png")}
+                data = {"username": session.get('username', 'guest')}
+                t0 = time.perf_counter()
+                r = SESSION.post(f"{MATE_API}/api/detect", files=files, data=data, timeout=(10, 120))
+                app.logger.info("/api/detect: %.3fs %s %s",
+                                time.perf_counter()-t0, r.status_code, r.headers.get("content-type"))
+            if r.status_code != 200:
+                app.logger.error("detect api failed: /api/detect %s %s", r.status_code, r.text[:200])
+                raise RuntimeError(f"/api/detect {r.status_code} {r.text[:200]}")
+            res = r.json()
+            prob_fake = float(res.get('expert_result', {}).get('final_prob', 0.5))
+            detect_score = round(prob_fake * 100.0, 2)
+            verdict = res.get('warning') or res.get('simple_result', {}).get('prediction')
+        except Exception as e:
+            app.logger.exception("탐지 호출 실패: %s", e)
+            flash("탐지 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            return redirect(url_for('detect'))
 
         new_result = DetectResult(
             user_id=user_id,
@@ -270,7 +291,8 @@ def detect():
         session['detect_result'] = {
             'uploaded_url': url_for('static', filename='uploads/' + filename),
             'uploaded_thumb_url': url_for('static', filename='uploads/' + detect_thumb),
-            'score': detect_score
+            'score': detect_score,
+            'verdict': verdict
         }
         return redirect(url_for('detect'))
 
@@ -308,26 +330,20 @@ def prevent():
         original_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
         file.save(original_path)
 
-# ---------- 외부 FastAPI 호출 ----------
+        # ---------- 외부 FastAPI 호출 ----------
         try:
             if WM_BYTES is None:
                 flash("내부 워터마크 참조 이미지를 불러오지 못했습니다.")
                 return redirect(url_for('prevent'))
 
-            alpha = 0.3  # 표시/제어용
             with open(original_path, "rb") as host_fp:
                 files = {
-                    "host_png": ("host.png", host_fp, "image/png"),                # ← 필드명 교체
-                    "wm_png":   ("wm.png",   io.BytesIO(WM_BYTES), "image/png"),    # ← 필드명 교체``
+                    "host": ("host.png", host_fp, "image/png"),
+                    "wm":   ("wm.png",   io.BytesIO(WM_BYTES), "image/png"),
                 }
-                data = {"alpha": alpha}
-
                 t0 = time.perf_counter()
-                r = SESSION.post(
-                    f"{MATE_API}/embed_fixed_single_color",   # ← 엔드포인트 교체
-                    files=files, data=data, timeout=(10, 180)
-                )
-                app.logger.info("/embed_fixed_single_color: %.3fs %s %s",
+                r = SESSION.post(f"{MATE_API}/embed_blind_fixed", files=files, timeout=(10, 180))
+                app.logger.info("/embed_blind_fixed: %.3fs %s %s",
                                 time.perf_counter()-t0, r.status_code, r.headers.get("content-type"))
 
             if r.status_code != 200 or "image/png" not in (r.headers.get("content-type","").lower()):
@@ -335,10 +351,9 @@ def prevent():
                 flash(f"워터마크 임베드 실패: {r.status_code} {r.text[:200]}")
                 return redirect(url_for('prevent'))
         except Exception as e:
-            app.logger.exception("embed_fixed_single_color 호출 실패: %s", e)
+            app.logger.exception("embed_blind_fixed 호출 실패: %s", e)
             flash("내부 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
             return redirect(url_for('prevent'))
-
 
         # 결과 PNG 저장
         base_noext, _ = os.path.splitext(original_filename)
@@ -363,7 +378,7 @@ def prevent():
             user_id=user_id,
             original_filename=original_filename,
             protected_filename=protected_filename,
-            watermark_strength=0.5  
+            watermark_strength=0.5
         )
         db.session.add(new_record)
         db.session.commit()
@@ -379,166 +394,23 @@ def prevent():
     result = session.pop('prevent_result', None)
     return render_template('prevent.html', result=result)
 
-# ── 마이페이지 ──
-@app.route('/mypage')
-def mypage():
-    if 'user_id' not in session:
-        flash("로그인이 필요합니다.")
-        return redirect(url_for('login_redirect_to_google'))
-
-    user_id = session['user_id']
-    dpage = request.args.get('dpage', 1, type=int)
-    mpage = request.args.get('mpage', 1, type=int)
-    PER_PAGE = 8
-
-    detect_pagination = DetectResult.query.filter_by(user_id=user_id)\
-        .order_by(DetectResult.created_at.desc())\
-        .paginate(page=dpage, per_page=PER_PAGE, error_out=False)
-
-    modify_pagination = ProtectedImage.query.filter_by(user_id=user_id)\
-        .order_by(ProtectedImage.created_at.desc())\
-        .paginate(page=mpage, per_page=PER_PAGE, error_out=False)
-
-    detect_history = [
-        {
-            'id': d.id,
-            'date': d.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-            'thumb_url': url_for('static', filename='uploads/' + thumb_name(d.uploaded_filename)),
-            'result': f"{d.detect_score}%"
-        }
-        for d in detect_pagination.items
-    ]
-
-    mods = []
-    for img in modify_pagination.items:
-        protected_path = os.path.join(app.config['RESULT_FOLDER'], img.protected_filename)
-        psnr_db = read_psnr_from_png(protected_path)
-        mods.append({
-            'id': img.id,
-            'date': img.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-            'thumb_url': url_for('static', filename='results/' + thumb_name(img.protected_filename)),
-            'psnr': (f"{psnr_db:.2f}" if psnr_db is not None else None),
-            'download_url': url_for('download_protected', image_id=img.id)
-        })
-    modify_history = mods
-
-    return render_template(
-        'mypage.html',
-        detect_history=detect_history,
-        modify_history=modify_history,
-        detect_pagination=detect_pagination,
-        modify_pagination=modify_pagination
-    )
-
-# ── 삭제/다운로드 ──
-@app.post('/delete_detect/<int:detect_id>')
-def delete_detect(detect_id):
-    if 'user_id' not in session:
-        flash("로그인이 필요합니다.")
-        return redirect(url_for('login_redirect_to_google'))
-
-    rec = DetectResult.query.get_or_404(detect_id)
-    if rec.user_id != session['user_id']:
-        abort(403)
-
-    try:
-        for fname in [rec.uploaded_filename, thumb_name(rec.uploaded_filename)]:
-            if fname:
-                fpath = os.path.join(app.config['UPLOAD_FOLDER'], fname)
-                if os.path.exists(fpath):
-                    os.remove(fpath)
-
-        db.session.delete(rec)
-        db.session.commit()
-        flash("탐지 기록이 삭제되었습니다.")
-    except Exception as e:
-        db.session.rollback()
-        app.logger.exception("delete_detect 실패: %s", e)
-        flash("삭제 중 오류가 발생했습니다. 다시 시도해주세요.")
-    return redirect(url_for('mypage'))
-
-@app.post('/delete_modify/<int:image_id>')
-def delete_modify(image_id):
-    if 'user_id' not in session:
-        flash("로그인이 필요합니다.")
-        return redirect(url_for('login_redirect_to_google'))
-
-    rec = ProtectedImage.query.get_or_404(image_id)
-    if rec.user_id != session['user_id']:
-        abort(403)
-
-    try:
-        if rec.original_filename:
-            for fname in [rec.original_filename, thumb_name(rec.original_filename)]:
-                fpath = os.path.join(app.config['UPLOAD_FOLDER'], fname)
-                if os.path.exists(fpath):
-                    os.remove(fpath)
-
-        if rec.protected_filename:
-            for fname in [rec.protected_filename, thumb_name(rec.protected_filename)]:
-                fpath = os.path.join(app.config['RESULT_FOLDER'], fname)
-                if os.path.exists(fpath):
-                    os.remove(fpath)
-
-        db.session.delete(rec)
-        db.session.commit()
-        flash("이미지 변형 기록이 삭제되었습니다.")
-    except Exception as e:
-        db.session.rollback()
-        app.logger.exception("delete_modify 실패: %s", e)
-        flash("삭제 중 오류가 발생했습니다. 다시 시도해주세요.")
-    return redirect(url_for('mypage'))
-
-@app.route('/download/<int:image_id>', methods=['GET'])
-def download_protected(image_id):
-    if 'user_id' not in session:
-        flash("로그인이 필요합니다.")
-        return redirect(url_for('login_redirect_to_google'))
-    rec = ProtectedImage.query.get_or_404(image_id)
-    if rec.user_id != session['user_id']:
-        abort(403)
-    path = os.path.join(app.config['RESULT_FOLDER'], rec.protected_filename)
-    if not os.path.exists(path):
-        flash("파일을 찾을 수 없습니다.")
-        return redirect(url_for('mypage'))
-    return send_file(path, as_attachment=True, download_name=rec.protected_filename)
-
 # ---------- 추출 호출 유틸 ----------
 def try_extract_wm_and_metrics_via_api(png_path: str):
-    """
-    1) /extract_fixed_color  (watermarked_png + wm_png + alpha)
-    2) 실패 시 /extract_fixed (watermarked_png만)
-    성공 시 (png_bytes, headers, None) 반환
-    """
     if WM_BYTES is None:
         return None, None, "참조 워터마크 없음"
-
     try:
         with open(png_path, "rb") as img_fp:
             files = {
-                "watermarked_png": ("image.png", img_fp, "image/png"),                # ← 필드명 중요!
-                "wm_png":         ("wm.png",    io.BytesIO(WM_BYTES), "image/png"),
+                "watermarked_img": ("image.png", img_fp, "image/png"),
+                "wm":              ("wm.png",    io.BytesIO(WM_BYTES), "image/png"),
             }
-            data = {"alpha": 0.3}
-            r = SESSION.post(f"{MATE_API}/extract_fixed_color", files=files, data=data, timeout=(10, 180))
-        app.logger.info("extract_fixed_color: %s %s", r.status_code, r.headers.get("content-type"))
+            r = SESSION.post(f"{MATE_API}/extract_blind_fixed", files=files, timeout=(10, 180))
+        app.logger.info("extract_blind_fixed: %s %s", r.status_code, r.headers.get("content-type"))
         if r.status_code == 200 and "image/png" in (r.headers.get("content-type","").lower()):
             return r.content, r.headers, None
-        reason = f"/extract_fixed_color -> {r.status_code} {(r.text or '')[:200]}"
+        return None, None, f"/extract_blind_fixed -> {r.status_code} {(r.text or '')[:200]}"
     except Exception as e:
-        reason = f"/extract_fixed_color 예외: {e}"
-
-    try:
-        with open(png_path, "rb") as img_fp:
-            files = {"watermarked_png": ("image.png", img_fp, "image/png")}
-            r2 = SESSION.post(f"{MATE_API}/extract_fixed", files=files, timeout=(10, 180))
-        app.logger.info("extract_fixed: %s %s", r2.status_code, r2.headers.get("content-type"))
-        if r2.status_code == 200 and "image/png" in (r2.headers.get("content-type","").lower()):
-            return r2.content, r2.headers, None
-        return None, None, reason + f" | /extract_fixed -> {r2.status_code} {(r2.text or '')[:200]}"
-    except Exception as e:
-        return None, None, reason + f" | /extract_fixed 예외: {e}"
-
+        return None, None, f"/extract_blind_fixed 예외: {e}"
 
 # ── 재검사 페이지 ──
 @app.route('/verify', methods=['GET', 'POST'])
@@ -553,7 +425,7 @@ def verify():
             flash("파일을 선택해주세요.")
             return redirect(url_for('verify'))
 
-        # PNG 권장
+        # PNG 권장 알림
         is_png_ext = file.filename.lower().endswith('.png')
         is_png_mime = (file.mimetype or '').lower() == 'image/png'
         if not (is_png_ext and is_png_mime):
@@ -635,11 +507,128 @@ def verify():
     result = session.pop('verify_result', None)
     return render_template('verify.html', result=result)
 
-@app.route('/info')
-def info():
-    return render_template('info.html')
+# ── 마이페이지 ──
+@app.route('/mypage', endpoint='mypage')
+def mypage():
+    if 'user_id' not in session:
+        flash("로그인이 필요합니다.")
+        return redirect(url_for('login_redirect_to_google'))
 
-# ── API  ──
+    user_id = session['user_id']
+    dpage = request.args.get('dpage', 1, type=int)
+    mpage = request.args.get('mpage', 1, type=int)
+    PER_PAGE = 8
+
+    detect_pagination = DetectResult.query.filter_by(user_id=user_id)\
+        .order_by(DetectResult.created_at.desc())\
+        .paginate(page=dpage, per_page=PER_PAGE, error_out=False)
+
+    modify_pagination = ProtectedImage.query.filter_by(user_id=user_id)\
+        .order_by(ProtectedImage.created_at.desc())\
+        .paginate(page=mpage, per_page=PER_PAGE, error_out=False)
+
+    detect_history = [
+        {
+            'id': d.id,
+            'date': d.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'thumb_url': url_for('static', filename='uploads/' + thumb_name(d.uploaded_filename)),
+            'result': f"{d.detect_score}%"
+        }
+        for d in detect_pagination.items
+    ]
+
+    mods = []
+    for img in modify_pagination.items:
+        protected_path = os.path.join(app.config['RESULT_FOLDER'], img.protected_filename)
+        psnr_db = read_psnr_from_png(protected_path)
+        mods.append({
+            'id': img.id,
+            'date': img.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'thumb_url': url_for('static', filename='results/' + thumb_name(img.protected_filename)),
+            'psnr': (f"{psnr_db:.2f}" if psnr_db is not None else None),
+            'download_url': url_for('download_protected', image_id=img.id)
+        })
+    modify_history = mods
+
+    return render_template(
+        'mypage.html',
+        detect_history=detect_history,
+        modify_history=modify_history,
+        detect_pagination=detect_pagination,
+        modify_pagination=modify_pagination
+    )
+
+# ── 삭제/다운로드 ──
+@app.post('/delete_detect/<int:detect_id>')
+def delete_detect(detect_id):
+    if 'user_id' not in session:
+        flash("로그인이 필요합니다.")
+        return redirect(url_for('login_redirect_to_google'))
+
+    rec = DetectResult.query.get_or_404(detect_id)
+    if rec.user_id != session['user_id']:
+        abort(403)
+
+    try:
+        for fname in [rec.uploaded_filename, thumb_name(rec.uploaded_filename)]:
+            if fname:
+                fpath = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+        db.session.delete(rec)
+        db.session.commit()
+        flash("탐지 기록이 삭제되었습니다.")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("delete_detect 실패: %s", e)
+        flash("삭제 중 오류가 발생했습니다. 다시 시도해주세요.")
+    return redirect(url_for('mypage'))
+
+@app.post('/delete_modify/<int:image_id>')
+def delete_modify(image_id):
+    if 'user_id' not in session:
+        flash("로그인이 필요합니다.")
+        return redirect(url_for('login_redirect_to_google'))
+
+    rec = ProtectedImage.query.get_or_404(image_id)
+    if rec.user_id != session['user_id']:
+        abort(403)
+
+    try:
+        if rec.original_filename:
+            for fname in [rec.original_filename, thumb_name(rec.original_filename)]:
+                fpath = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+        if rec.protected_filename:
+            for fname in [rec.protected_filename, thumb_name(rec.protected_filename)]:
+                fpath = os.path.join(app.config['RESULT_FOLDER'], fname)
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+        db.session.delete(rec)
+        db.session.commit()
+        flash("이미지 변형 기록이 삭제되었습니다.")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("delete_modify 실패: %s", e)
+        flash("삭제 중 오류가 발생했습니다. 다시 시도해주세요.")
+    return redirect(url_for('mypage'))
+
+@app.route('/download/<int:image_id>', methods=['GET'])
+def download_protected(image_id):
+    if 'user_id' not in session:
+        flash("로그인이 필요합니다.")
+        return redirect(url_for('login_redirect_to_google'))
+    rec = ProtectedImage.query.get_or_404(image_id)
+    if rec.user_id != session['user_id']:
+        abort(403)
+    path = os.path.join(app.config['RESULT_FOLDER'], rec.protected_filename)
+    if not os.path.exists(path):
+        flash("파일을 찾을 수 없습니다.")
+        return redirect(url_for('mypage'))
+    return send_file(path, as_attachment=True, download_name=rec.protected_filename)
+
+# ── API 워밍업 ──
 _warmup_lock = Lock()
 _warmed_up = False
 

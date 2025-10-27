@@ -3,7 +3,10 @@
 
 <div class="page-header">
   <h2>워터마크 재검사</h2>
-  <p>DeepShield(블라인드)로 보호된 PNG에서 워터마크를 다시 추출해 상태를 확인합니다.</p>
+  <p>
+    기존 <strong>방지 기능</strong>을 통해 워터마크가 적용된 이미지를 다시 검사하여
+    워터마크의 보존 상태를 확인합니다.
+  </p>
 </div>
 
 <section class="detect-section">
@@ -72,12 +75,36 @@
             <p>유사도를 계산할 수 없습니다.</p>
           {% endif %}
 
-          {% if result.psnr or result.ncc or result.ber %}
-            <table class="metrics-table">
-              <tr><th>PSNR (dB)</th><td>{{ result.psnr or '-' }}</td></tr>
-              <tr><th>NCC</th><td>{{ result.ncc or '-' }}</td></tr>
-              <tr><th>BER</th><td>{{ result.ber or '-' }}</td></tr>
-            </table>
+          {% if result.ncc or result.ber %}
+            <details class="hint">
+              <summary>고급 지표 보기 (NCC, BER)</summary>
+              <table class="metrics-table">
+                <tr>
+                  <th>NCC</th>
+                  <td>
+                    {{ result.ncc or '-' }}
+                    <span class="tooltip">❓
+                      <span class="tooltip-text">
+                        NCC(정규화 상관계수): 추출된 워터마크가 기준 워터마크와 얼마나 닮았는지.<br>
+                        1.0에 가까울수록 매우 유사, 음수는 불일치 경향입니다.
+                      </span>
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <th>BER</th>
+                  <td>
+                    {{ result.ber or '-' }}
+                    <span class="tooltip">❓
+                      <span class="tooltip-text">
+                        BER(비트 오류율): 워터마크 비트가 뒤바뀐 비율입니다.<br>
+                        0에 가까울수록 보존이 잘된 상태입니다.
+                      </span>
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </details>
           {% endif %}
 
           <p class="verdict">

@@ -264,7 +264,7 @@ main { flex: 1; }
     margin: 0 20px;
     color: #333;
 }
-.page-header p { display: none; }
+.page-header p { display: block; margin: 6px 20px 0; color: #555; }
 
 /* 툴팁 컨테이너 */
 .tooltip {
