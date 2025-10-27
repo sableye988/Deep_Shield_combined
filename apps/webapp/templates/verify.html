@@ -3,20 +3,40 @@
 
 <div class="page-header">
   <h2>워터마크 재검사</h2>
-  <p>DeepShield로 보호된 PNG를 재검사해 추가적인 변형이 가해졌는지 확인합니다.</p>
+  <p>
+    기존 <strong>방지 기능</strong>을 통해 워터마크가 적용된 이미지를 다시 검사하여
+    워터마크의 보존 상태를 확인합니다.
+  </p>
 </div>
 
 <section class="detect-section">
   <div class="detect-container">
 
     <!-- 업로드 폼 -->
-    <form method="POST" action="{{ url_for('verify') }}" enctype="multipart/form-data" class="detect-form">
+    <form id="verify-form" method="POST" action="{{ url_for('verify') }}" enctype="multipart/form-data" class="detect-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="image">PNG 업로드</label>
-      <input type="file" id="image" name="image" accept="image/png" required>
-      <p class="help">* 방지 페이지에서 받은 <strong>PNG</strong> 파일만 지원합니다.</p>
+      <input type="file" id="image" name="image" accept="image/png,image/*" required>
+      <p class="help">* 방지 페이지에서 받은 <strong>PNG</strong> 파일 권장 · 최대 <strong>20MB</strong>까지 업로드 가능</p>
       <button type="submit">재검사 시작</button>
     </form>
+
+    <script>
+      (function () {
+        const MAX_MB = 20;
+        const form = document.getElementById('verify-form');
+        const input = document.getElementById('image');
+        form.addEventListener('submit', function (e) {
+          const f = input.files && input.files[0];
+          if (!f) return;
+          const sizeMB = f.size / (1024 * 1024);
+          if (sizeMB > MAX_MB) {
+            e.preventDefault();
+            alert(`파일이 ${sizeMB.toFixed(2)}MB 입니다. 최대 ${MAX_MB}MB까지 업로드할 수 있습니다.`);
+          }
+        });
+      })();
+    </script>
 
     <!-- 결과 박스 -->
     <div class="detect-result-box">
@@ -24,13 +44,23 @@
         <h3>결과</h3>
 
         <div class="result-images">
-          <img src="{{ result.uploaded_url }}" alt="업로드 이미지 미리보기">
+          <div style="text-align:center">
+            <p>업로드 이미지</p>
+            <img src="{{ result.uploaded_url }}" alt="업로드 이미지 미리보기">
+          </div>
+
+          {% if result.wm_preview_url %}
+          <div style="text-align:center">
+            <p>추출된 워터마크</p>
+            <img src="{{ result.wm_preview_url }}" alt="추출된 워터마크 미리보기">
+          </div>
+          {% endif %}
         </div>
 
         <div class="result-metrics">
           {% if result.similarity is not none %}
             <p>
-              유사도(Deepshild 워터마크 보존여부): 
+              유사도(워터마크 보존 정도, NCC 기반): 
               <strong>{{ result.similarity }}%</strong>
               <span class="tooltip">❓
                 <span class="tooltip-text">
@@ -38,12 +68,43 @@
                 </span>
               </span>
             </p>
-
             <div class="progress">
               <div class="bar" style="width: {{ result.similarity }}%;"></div>
             </div>
           {% else %}
             <p>유사도를 계산할 수 없습니다.</p>
+          {% endif %}
+
+          {% if result.ncc or result.ber %}
+            <details class="hint">
+              <summary>고급 지표 보기 (NCC, BER)</summary>
+              <table class="metrics-table">
+                <tr>
+                  <th>NCC</th>
+                  <td>
+                    {{ result.ncc or '-' }}
+                    <span class="tooltip">❓
+                      <span class="tooltip-text">
+                        NCC(정규화 상관계수): 추출된 워터마크가 기준 워터마크와 얼마나 닮았는지.<br>
+                        1.0에 가까울수록 매우 유사, 음수는 불일치 경향입니다.
+                      </span>
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <th>BER</th>
+                  <td>
+                    {{ result.ber or '-' }}
+                    <span class="tooltip">❓
+                      <span class="tooltip-text">
+                        BER(비트 오류율): 워터마크 비트가 뒤바뀐 비율입니다.<br>
+                        0에 가까울수록 보존이 잘된 상태입니다.
+                      </span>
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </details>
           {% endif %}
 
           <p class="verdict">
@@ -66,10 +127,5 @@
 
   </div>
 </section>
-
-<style>
-.progress{height:10px;background:#eee;border-radius:6px;overflow:hidden;margin:.5rem 0 1rem}
-.progress .bar{height:100%}
-</style>
 
 {% endblock %}

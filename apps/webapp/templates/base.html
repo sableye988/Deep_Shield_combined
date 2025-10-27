@@ -22,8 +22,7 @@
                     <a href="{{ url_for('mypage') }}">마이페이지</a>
                     <a href="{{ url_for('logout') }}">로그아웃</a>
                 {% else %}
-                    <a href="{{ url_for('login') }}">로그인</a>
-                    <a href="{{ url_for('signup') }}">회원가입</a>
+                      <a href="{{ url_for('google_login') }}">Google로 로그인</a>
                 {% endif %}
             </nav>
         </header>
