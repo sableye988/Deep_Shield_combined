@@ -15,7 +15,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 # 새 터미널 열고 Flask(Web)
 cd apps\webapp
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+
 # 환경변수(선택): SESSION_SECRET, GOOGLE_CLIENT_ID/SECRET
 # MATE_API 미설정이면 기본 http://127.0.0.1:8000 사용
 flask run
@@ -23,5 +25,7 @@ flask run
 ## 4. 유의사항
 
 * 두 서버(FastAPI + Flask)를 **모두 실행해야 전체 기능이 정상 동작**합니다.
-
+* DB가 초기화되지 않았다면 다음 명령으로 세팅하세요.
+  cd apps\webapp
+  flask db upgrade
 * `assets/hanshin.png`는 워터마크 검증용 참조 이미지이므로 반드시 필요합니다.
