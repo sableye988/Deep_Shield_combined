@@ -27,5 +27,7 @@ flask run
 * 두 서버(FastAPI + Flask)를 **모두 실행해야 전체 기능이 정상 동작**합니다.
 * DB가 초기화되지 않았다면 다음 명령으로 세팅하세요.
   cd apps\webapp
+  $env:FLASK_APP="app.py"
   flask db upgrade
+* Alembic 오류나 리비전 불일치로 user 테이블이 안 만들어질 경우 - python -c "from app import app, db; app.app_context().push(); db.create_all(); print('tables:', __import__('sqlalchemy').inspect(db.engine).get_table_names())"
 * `assets/hanshin.png`는 워터마크 검증용 참조 이미지이므로 반드시 필요합니다.
