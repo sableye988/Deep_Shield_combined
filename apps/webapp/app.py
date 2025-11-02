@@ -58,7 +58,8 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # ── 외부 FastAPI ──
-MATE_API = os.environ.get("MATE_API", "http://127.0.0.1:8000")  # ★ 딥페이크/워터마크 API 베이스
+MATE_API_URL = os.getenv("MATE_API_URL", "https://deep-shield-combined-api.onrender.com")
+)  # ★ 딥페이크/워터마크 API 베이스
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 os.makedirs(ASSETS_DIR, exist_ok=True)
