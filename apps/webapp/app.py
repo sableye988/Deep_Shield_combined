@@ -647,5 +647,11 @@ def warm_up_mate_api_once():
             app.logger.info("MATE_API warmup failed (ignored): %s", e)
         _warmed_up = True
 
+with app.app_context():
+    from models import User, ProtectedImage, DetectResult
+    db.create_all()
+    print("✅ Database tables checked/created successfully")
+
+
 if __name__ == '__main__':
     app.run(debug=True)
